@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { activeCentreId } from "@/lib/centre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatINR } from "@/lib/utils";
+import { nativeControlClass } from "@/lib/select-styles";
 
 export const metadata = { title: "MIS dashboard — MBD Clinic OS" };
 
@@ -90,7 +91,7 @@ export default async function MisReportPage({
                 type="date"
                 name="from"
                 defaultValue={fromIso}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               />
             </div>
             <div className="space-y-1">
@@ -99,7 +100,7 @@ export default async function MisReportPage({
                 type="date"
                 name="to"
                 defaultValue={toIso}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               />
             </div>
             <div className="space-y-1">
@@ -107,7 +108,7 @@ export default async function MisReportPage({
               <select
                 name="type"
                 defaultValue={typeFilter ?? "all"}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               >
                 <option value="all">All</option>
                 <option value="Clinic">Clinic</option>

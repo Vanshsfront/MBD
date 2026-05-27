@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { nativeControlClass } from "@/lib/select-styles";
 
 export const metadata = { title: "Audit log — MBD Clinic OS" };
 
@@ -67,7 +68,7 @@ export default async function AuditLogPage({
               <select
                 name="entity"
                 defaultValue={entityFilter ?? "all"}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               >
                 <option value="all">All</option>
                 {distinctEntities.map((e) => (
@@ -82,7 +83,7 @@ export default async function AuditLogPage({
               <select
                 name="user"
                 defaultValue={userFilter ?? "all"}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               >
                 <option value="all">All</option>
                 {staff.map((s) => (
@@ -341,7 +342,7 @@ function DateInput({
         type="date"
         name={name}
         defaultValue={defaultValue}
-        className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+        className={nativeControlClass}
       />
     </div>
   );

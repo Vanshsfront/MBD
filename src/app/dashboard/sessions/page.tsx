@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { activeCentreId } from "@/lib/centre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { nativeControlClass } from "@/lib/select-styles";
 import { formatINR } from "@/lib/utils";
 
 export const metadata = { title: "Sessions — MBD Clinic OS" };
@@ -90,7 +91,7 @@ export default async function SessionsPage({
                 type="date"
                 name="from"
                 defaultValue={fromIso}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               />
             </div>
             <div className="space-y-1">
@@ -99,7 +100,7 @@ export default async function SessionsPage({
                 type="date"
                 name="to"
                 defaultValue={toIso}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               />
             </div>
             {!restrictToOwn ? (
@@ -110,7 +111,7 @@ export default async function SessionsPage({
                 <select
                   name="therapistId"
                   defaultValue={sp.therapistId ?? ""}
-                  className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                  className={nativeControlClass}
                 >
                   <option value="">All</option>
                   {therapists.map((t) => (
@@ -126,7 +127,7 @@ export default async function SessionsPage({
               <select
                 name="status"
                 defaultValue={sp.status ?? "all"}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               >
                 <option value="all">All</option>
                 <option value="SCHEDULED">Scheduled</option>

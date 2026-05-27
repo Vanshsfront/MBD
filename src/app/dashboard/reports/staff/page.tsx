@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { activeCentreId } from "@/lib/centre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatINR } from "@/lib/utils";
+import { nativeControlClass } from "@/lib/select-styles";
 
 export const metadata = { title: "Staff productivity — MBD Clinic OS" };
 
@@ -179,7 +180,7 @@ function DateInput({
         type="date"
         name={name}
         defaultValue={defaultValue}
-        className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+        className={nativeControlClass}
       />
     </div>
   );

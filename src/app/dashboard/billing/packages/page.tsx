@@ -10,6 +10,7 @@ import { activeCentreId } from "@/lib/centre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
+import { nativeControlClass } from "@/lib/select-styles";
 
 export const metadata = { title: "Packages — MBD Clinic OS" };
 
@@ -90,7 +91,7 @@ export default async function PackagesListPage({
               <select
                 name="status"
                 defaultValue={sp.status ?? "all"}
-                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                className={nativeControlClass}
               >
                 <option value="all">All</option>
                 <option value="ACTIVE">Active</option>
