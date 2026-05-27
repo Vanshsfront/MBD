@@ -1,164 +1,136 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { UserPlus, Pencil, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { readApiError } from "@/lib/error-messages";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AddStaffDialog,
+  EditStaffDialog,
+  ROLE_DISPLAY,
+  type StaffLite,
+  type DepartmentLite,
+} from "@/components/admin/staff-dialogs";
 
-interface StaffRow {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  designation: string | null;
-  department: string | null;
-  isActive: boolean;
-}
-
-export function StaffAdminView({ staff }: { staff: StaffRow[] }) {
+export function StaffAdminView({
+  staff,
+  departments,
+}: {
+  staff: StaffLite[];
+  departments: DepartmentLite[];
+}) {
   const router = useRouter();
-  const [resetFor, setResetFor] = useState<string | null>(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [pending, setPending] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<StaffLite | null>(null);
+  const [query, setQuery] = useState("");
 
-  async function toggle(s: StaffRow) {
-    setPending(s.id);
-    try {
-      const res = await fetch("/api/admin/staff", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: s.id, isActive: !s.isActive }),
-      });
-      if (!res.ok) {
-        throw new Error(
-          await readApiError(res, { fallback: "Couldn't update staff status." }),
-        );
-      }
-      toast.success(`${s.name} ${s.isActive ? "deactivated" : "activated"}`);
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setPending(null);
-    }
-  }
-
-  async function resetPassword(id: string) {
-    if (newPassword.length < 6) {
-      toast.error("Password must be ≥ 6 chars");
-      return;
-    }
-    setPending(id);
-    try {
-      const res = await fetch("/api/admin/staff", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, resetPassword: newPassword }),
-      });
-      if (!res.ok) {
-        throw new Error(
-          await readApiError(res, { fallback: "Couldn't reset the password." }),
-        );
-      }
-      toast.success("Password reset");
-      setResetFor(null);
-      setNewPassword("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setPending(null);
-    }
-  }
+  const filtered = staff.filter((s) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      s.name.toLowerCase().includes(q) ||
+      s.email.toLowerCase().includes(q) ||
+      s.role.toLowerCase().includes(q) ||
+      (s.department?.name ?? "").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Staff</h1>
-        <p className="text-sm text-muted-foreground">
-          Activate / deactivate accounts, reset passwords. New-hire onboarding is a Phase 5 item.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Staff</h1>
+          <p className="text-sm text-muted-foreground">
+            Add employees, edit roles &amp; departments, reset passwords, deactivate. See the{" "}
+            <a href="/dashboard/admin/hierarchy" className="inline-flex items-center gap-1 font-medium text-primary">
+              <Link2 className="h-3.5 w-3.5" /> org chart
+            </a>{" "}
+            for a visual view.
+          </p>
+        </div>
+        <Button onClick={() => setAdding(true)}>
+          <UserPlus className="mr-1 h-4 w-4" /> Add staff
+        </Button>
       </header>
 
       <Card>
-        <CardHeader>
-          <CardTitle>{staff.length} staff records</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardTitle>{filtered.length} of {staff.length} staff</CardTitle>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, email, role, department…"
+            className="max-w-xs"
+          />
         </CardHeader>
         <CardContent className="p-0">
-          <ul className="divide-y">
-            {staff.map((s) => (
-              <li key={s.id} className="px-6 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{s.name}</p>
-                      <Badge variant={s.isActive ? "success" : "default"}>
-                        {s.isActive ? "ACTIVE" : "INACTIVE"}
-                      </Badge>
-                      <Badge variant="outline">{s.role}</Badge>
-                    </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell>
+                    <p className="text-sm font-medium text-[color:var(--text-primary)]">{s.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {s.email}
-                      {s.department ? ` · ${s.department}` : ""}
                       {s.designation ? ` · ${s.designation}` : ""}
                     </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setResetFor(resetFor === s.id ? null : s.id)}
-                    >
-                      Reset password
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{ROLE_DISPLAY[s.role] ?? s.role}</Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{s.department?.name ?? "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant={s.isActive ? "success" : "default"}>
+                      {s.isActive ? "ACTIVE" : "INACTIVE"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => setEditing(s)}>
+                      <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggle(s)}
-                      disabled={pending === s.id}
-                    >
-                      {s.isActive ? "Deactivate" : "Activate"}
-                    </Button>
-                  </div>
-                </div>
-                {resetFor === s.id ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Input
-                      type="text"
-                      placeholder="New password (≥ 6 chars)"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="max-w-xs"
-                    />
-                    <Button
-                      type="button"
-                      onClick={() => resetPassword(s.id)}
-                      disabled={pending === s.id}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setResetFor(null);
-                        setNewPassword("");
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
+
+      {adding && (
+        <AddStaffDialog
+          departments={departments}
+          onClose={() => setAdding(false)}
+          onCreated={() => {
+            setAdding(false);
+            router.refresh();
+          }}
+        />
+      )}
+      {editing && (
+        <EditStaffDialog
+          key={editing.id}
+          staff={editing}
+          departments={departments}
+          onClose={() => setEditing(null)}
+          onChanged={() => {
+            setEditing(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

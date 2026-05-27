@@ -16,7 +16,7 @@ import type { Role } from "@/lib/permissions";
 import {
   LayoutDashboard, QrCode, UserPlus, Users, Calendar, Stethoscope, Receipt,
   CreditCard, Package, BarChart3, List, AlertTriangle, Building2, UserCog,
-  Tag, History, Flag, Bell, Settings, Box, type LucideIcon,
+  Tag, History, Flag, Bell, Settings, Box, GitBranch, type LucideIcon,
 } from "lucide-react";
 
 const NAV_ICON: Record<NavIcon, LucideIcon> = {
@@ -40,6 +40,7 @@ const NAV_ICON: Record<NavIcon, LucideIcon> = {
   bell: Bell,
   settings: Settings,
   box: Box,
+  hierarchy: GitBranch,
 };
 
 // Dashboard shell — warm, neumorphic chrome matching the legacy codebase.

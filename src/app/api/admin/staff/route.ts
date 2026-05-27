@@ -1,5 +1,7 @@
-// Admin staff actions: activate/deactivate + password reset.
-// Limited to admin:manage_staff (OWNER, ADMIN, DEV per PRD §3.1).
+// Admin staff CRUD — create, edit (incl. role/department/centre), password
+// reset, activate/deactivate, and remove (soft-delete when there's history).
+// Gated to admin:manage_staff (OWNER, ADMIN, DEV per PRD §3.1). performedById
+// is always derived from the session — never trusted from the body.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -7,20 +9,87 @@ import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog, computeChanges } from "@/lib/audit";
+import { activeCentreId } from "@/lib/centre";
+
+// Roles an admin may create/assign through this UI. OWNER is singular and DEV
+// is provisioned out-of-band (and gated to non-prod), so neither is creatable.
+const ASSIGNABLE_ROLES = ["ADMIN", "FRONT_OFFICE", "CONSULTANT", "THERAPIST"] as const;
+
+const createSchema = z.object({
+  name: z.string().min(1).max(120),
+  email: z.string().email().max(160),
+  password: z.string().min(6).max(60),
+  role: z.enum(ASSIGNABLE_ROLES),
+  departmentId: z.string().min(1).nullish(),
+  centreId: z.string().min(1).nullish(),
+  designation: z.string().max(120).nullish(),
+});
 
 const updateSchema = z.object({
   id: z.string().min(1),
+  name: z.string().min(1).max(120).optional(),
+  role: z.enum(ASSIGNABLE_ROLES).optional(),
+  departmentId: z.string().min(1).nullish(),
+  centreId: z.string().min(1).nullish(),
+  designation: z.string().max(120).nullish(),
   isActive: z.boolean().optional(),
   resetPassword: z.string().min(6).max(60).optional(),
-  designation: z.string().max(120).optional(),
 });
 
+// ── Create ────────────────────────────────────────────────────────────────
+export async function POST(req: Request) {
+  const auth = await requirePermission("admin:manage_staff");
+  if (!auth.ok) return auth.response;
+
+  const parsed = createSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "validation_failed", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+  const f = parsed.data;
+
+  const existing = await prisma.staff.findUnique({ where: { email: f.email } });
+  if (existing) {
+    return NextResponse.json({ error: "email_exists" }, { status: 409 });
+  }
+
+  // Default new staff to the active centre so admins don't re-pick every time.
+  const centreId = f.centreId ?? (await activeCentreId()) ?? null;
+
+  const staff = await prisma.staff.create({
+    data: {
+      name: f.name,
+      email: f.email,
+      passwordHash: await hash(f.password, 10),
+      role: f.role,
+      departmentId: f.departmentId ?? null,
+      centreId,
+      designation: f.designation ?? null,
+    },
+  });
+
+  const meta = requestMeta(req);
+  await createAuditLog({
+    action: "CREATE",
+    entity: "Staff",
+    entityId: staff.id,
+    performedById: auth.user.id,
+    metadata: { name: f.name, email: f.email, role: f.role, centreId },
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  });
+
+  return NextResponse.json({ ok: true, id: staff.id }, { status: 201 });
+}
+
+// ── Edit (full) + password reset + activate/deactivate ─────────────────────
 export async function PATCH(req: Request) {
   const auth = await requirePermission("admin:manage_staff");
   if (!auth.ok) return auth.response;
 
-  const body = (await req.json()) as unknown;
-  const parsed = updateSchema.safeParse(body);
+  const parsed = updateSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
       { error: "validation_failed", issues: parsed.error.issues },
@@ -32,27 +101,43 @@ export async function PATCH(req: Request) {
   const existing = await prisma.staff.findUnique({ where: { id: f.id } });
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  // Owner cannot be deactivated by anyone except themselves.
-  if (
-    existing.role === "OWNER" &&
-    f.isActive === false &&
-    auth.user.id !== existing.id
-  ) {
+  // The OWNER cannot be deactivated by anyone but themselves, and their role
+  // can't be changed away from OWNER.
+  if (existing.role === "OWNER" && f.isActive === false && auth.user.id !== existing.id) {
     return NextResponse.json({ error: "cannot_deactivate_owner" }, { status: 409 });
   }
 
   const data: Record<string, unknown> = {};
+  if (f.name !== undefined) data.name = f.name;
   if (f.isActive !== undefined) data.isActive = f.isActive;
-  if (f.designation !== undefined) data.designation = f.designation;
-  if (f.resetPassword) {
-    data.passwordHash = await hash(f.resetPassword, 10);
+  if (f.designation !== undefined) data.designation = f.designation ?? null;
+  if (f.departmentId !== undefined) data.departmentId = f.departmentId ?? null;
+  if (f.centreId !== undefined) data.centreId = f.centreId ?? null;
+  // Don't reassign the OWNER/DEV away from their privileged role via this UI.
+  if (f.role !== undefined && existing.role !== "OWNER" && existing.role !== "DEV") {
+    data.role = f.role;
   }
+  if (f.resetPassword) data.passwordHash = await hash(f.resetPassword, 10);
 
   const updated = await prisma.staff.update({ where: { id: f.id }, data });
 
   const changes = computeChanges(
-    { isActive: existing.isActive, designation: existing.designation },
-    { isActive: updated.isActive, designation: updated.designation },
+    {
+      name: existing.name,
+      role: existing.role,
+      departmentId: existing.departmentId,
+      centreId: existing.centreId,
+      designation: existing.designation,
+      isActive: existing.isActive,
+    },
+    {
+      name: updated.name,
+      role: updated.role,
+      departmentId: updated.departmentId,
+      centreId: updated.centreId,
+      designation: updated.designation,
+      isActive: updated.isActive,
+    },
   );
 
   const meta = requestMeta(req);
@@ -67,5 +152,62 @@ export async function PATCH(req: Request) {
     userAgent: meta.userAgent,
   });
 
+  return NextResponse.json({ ok: true });
+}
+
+// ── Remove (soft-delete when the staff has history) ────────────────────────
+export async function DELETE(req: Request) {
+  const auth = await requirePermission("admin:manage_staff");
+  if (!auth.ok) return auth.response;
+
+  const parsed = z.object({ id: z.string().min(1) }).safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: "validation_failed" }, { status: 400 });
+  }
+  const { id } = parsed.data;
+
+  const existing = await prisma.staff.findUnique({ where: { id } });
+  if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (existing.role === "OWNER") {
+    return NextResponse.json({ error: "cannot_remove_owner" }, { status: 400 });
+  }
+  if (existing.role === "DEV") {
+    return NextResponse.json({ error: "cannot_remove_dev" }, { status: 400 });
+  }
+
+  const [audits, sessions, consultations, appts, assigns] = await Promise.all([
+    prisma.auditLog.count({ where: { performedById: id } }),
+    prisma.session.count({ where: { therapistId: id } }),
+    prisma.consultation.count({ where: { consultantId: id } }),
+    prisma.appointment.count({ where: { therapistId: id } }),
+    prisma.clientDoctorAssignment.count({ where: { staffId: id } }),
+  ]);
+  const hasHistory = audits + sessions + consultations + appts + assigns > 0;
+
+  const meta = requestMeta(req);
+  if (hasHistory) {
+    await prisma.staff.update({ where: { id }, data: { isActive: false } });
+    await createAuditLog({
+      action: "UPDATE",
+      entity: "Staff",
+      entityId: id,
+      performedById: auth.user.id,
+      metadata: { name: existing.name, softDelete: true, reason: "has_history" },
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
+    return NextResponse.json({ ok: true, softDelete: true });
+  }
+
+  await prisma.staff.delete({ where: { id } });
+  await createAuditLog({
+    action: "DELETE",
+    entity: "Staff",
+    entityId: id,
+    performedById: auth.user.id,
+    metadata: { name: existing.name, email: existing.email },
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  });
   return NextResponse.json({ ok: true });
 }

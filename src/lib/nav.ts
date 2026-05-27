@@ -45,7 +45,8 @@ export type NavIcon =
   | "flag"
   | "bell"
   | "settings"
-  | "box";
+  | "box"
+  | "hierarchy";
 
 export const NAV_ITEMS: readonly NavItem[] = [
   // Overview
@@ -76,6 +77,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Admin
   { label: "Clinics", href: "/dashboard/admin/clinics", section: "admin", permission: "admin:manage_clinics", icon: "building" },
   { label: "Staff", href: "/dashboard/admin/staff", section: "admin", permission: "admin:manage_staff", icon: "user-cog" },
+  { label: "Hierarchy", href: "/dashboard/admin/hierarchy", section: "admin", permission: "admin:manage_staff", icon: "hierarchy" },
   { label: "Services & rates", href: "/dashboard/admin/services", section: "admin", permission: "admin:manage_services", icon: "list" },
   { label: "Products & inventory", href: "/dashboard/admin/products", section: "admin", permission: "admin:manage_products", icon: "box" },
   { label: "Promotions", href: "/dashboard/admin/promotions", section: "admin", permission: "admin:manage_promotions", icon: "tag" },
