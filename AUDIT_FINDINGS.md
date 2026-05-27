@@ -87,3 +87,20 @@ The real gap: OG ships **8 UI primitives on Radix**; Clinic 2 ships **55 on Base
 - **MFA + login rate-limiting/lockout**, **Prisma migrations** (currently `db push`), **Vitest** unit tests (permissions/billing/ID-gen), **strict CSP** (needs per-request nonce at the proxy). All flagged in HANDOFF.
 
 ## Phase E — closed via `scripts/inject-supplemental.ts` (guarded + idempotent): physiotherapy consultation `{{%consultantSignature}}` (now stamps the clinician signature) + physician `{{planOfCare}}` (now prints plan of care). Renders re-verified (`smoke-clinical` + `smoke-followups`). **Remaining** for the same guarded approach: physician lab/imaging/ref/wellness checkboxes, physician signature anchor, physio provisional-diagnosis placeholder, and consultant signature on the 6 follow-ups (which already carry a per-row `{{sign}}` column).
+
+---
+
+## Production audit pass (2026-05-28) — 3 Explore agents + verification
+
+**Fixed & committed** (branch `feat/merged-build`):
+- **Phase 1 — backend correctness** (`44c70aa`): `clientCode` race → atomic per-centre `ClientCodeCounter` inside the intake txn; PDF render try/catch → DOCX fallback (no 500 on LibreOffice failure); payments GET centre-scoped (cross-centre leak) + exact rounding remainder; **MIS discount now allocated** across rows (invoices + packages) so the discount column is real and rows reconcile to the invoice total; change-request reschedule approval enforces `validateAppointmentTiming`; inventory decrement is now an atomic conditional `updateMany` (no oversell). (Patient-type was already centre-scoped — agent false-positive. Centre-switch cookie left `httpOnly:false` intentionally.)
+- **Phase 2 — QR temp name** (`21df197`): `IntakeToken.label` + FO input; friendly name shown instead of the raw token id.
+- **Phase 3 — audit trail** (`afd600a`): plain-English summary + expandable `<details>` humanized field/old→new diff (no more raw JSON).
+- **Phase 4a UI** (`cf07b45`): dashboard error boundary; loading skeletons for admin/sessions/packages/patient-detail/calendar/intake; responsive intake-QR.
+- **Phase 4b UI** (`79dc6dd`): calendar booking + cancel dialogs moved to the accessible Dialog kit (focus trap, Esc, animation, ARIA); removed the hand-rolled `DialogShell`.
+
+**Remaining UI polish (functional today; tracked for a focused follow-up):**
+- **Raw `<select>` → Radix `Select`** in client-state forms (invoice creator, assign, record-payment, change-requests, admin promotions/flags/clinics dialogs). *Note:* these are already styled to match the kit and native selects are more touch-friendly on mobile, so this is cosmetic, not a defect. GET-form filter selects (audit/sessions/MIS) are intentionally left native.
+- **Per-list empty states** on the admin lists + sessions + packages; **clinical-record autosave** (manual Save-draft + resume already works); neumorphic/font polish on filter cards; flag-type icons.
+
+**Deferred hardening (need schema/raw-SQL/infra; low urgency):** onDelete cascades (no delete endpoints exist), `ClientDoctorAssignment` partial-unique (Postgres partial index via raw migration), force-password-change, MFA/rate-limiting, Prisma migrations, strict CSP, Vitest. Tracked in HANDOFF.
