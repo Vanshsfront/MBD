@@ -295,10 +295,13 @@ async function main() {
     const deptByName = new Map(deptRows.map((d) => [d.name, d]));
     console.log(`[seed] Departments: ${deptRows.length}`);
 
-    // Staff (idempotent on email)
+    // Staff (idempotent on email). Never seed the DEV super-account in
+    // production (audit H-3) — it's a dev/testing convenience only.
     const passwordHash = await hash(DEFAULT_PASSWORD, 10);
+    const roster =
+      process.env.NODE_ENV === "production" ? ROSTER.filter((s) => s.role !== "DEV") : ROSTER;
     const staffRows = await Promise.all(
-      ROSTER.map((s) => {
+      roster.map((s) => {
         const dept = s.department ? deptByName.get(s.department) : null;
         return prisma.staff.upsert({
           where: { email: s.email },
