@@ -14,9 +14,10 @@ import type {
 } from "@fullcalendar/core";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { readApiError } from "@/lib/error-messages";
 
 interface TherapistOption {
@@ -355,7 +356,12 @@ function CreateAppointmentDialog({
   const endDate = new Date(end);
 
   return (
-    <DialogShell title="Book appointment" onClose={() => onClose(false)}>
+    <Dialog open onOpenChange={(v) => !v && onClose(false)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Book appointment</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         {startDate.toLocaleString("en-IN", {
           weekday: "short",
@@ -415,15 +421,17 @@ function CreateAppointmentDialog({
           </select>
         </div>
       </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => onClose(false)}>
-          Cancel
-        </Button>
-        <Button onClick={submit} disabled={pending}>
-          {pending ? "Booking…" : "Book"}
-        </Button>
-      </div>
-    </DialogShell>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onClose(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={pending}>
+            {pending ? "Booking…" : "Book"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -466,7 +474,12 @@ function EventDetailDialog({
   }
 
   return (
-    <DialogShell title={event.title} onClose={() => onClose(false)}>
+    <Dialog open onOpenChange={(v) => !v && onClose(false)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="truncate">{event.title}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
       <div className="space-y-1 text-sm">
         <p>
           <span className="text-muted-foreground">Therapist:</span> {event.therapistName}
@@ -516,40 +529,18 @@ function EventDetailDialog({
           </div>
         </div>
       ) : null}
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => onClose(false)}>
-          Close
-        </Button>
-        {canEdit && event.status !== "CANCELLED" ? (
-          <Button variant="destructive" onClick={cancel} disabled={pending}>
-            {pending ? "Cancelling…" : "Cancel appointment"}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onClose(false)}>
+            Close
           </Button>
-        ) : null}
-      </div>
-    </DialogShell>
-  );
-}
-
-function DialogShell({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{title}</CardTitle>
-          <Button size="sm" variant="ghost" onClick={onClose}>
-            ✕
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">{children}</CardContent>
-      </Card>
-    </div>
+          {canEdit && event.status !== "CANCELLED" ? (
+            <Button variant="destructive" onClick={cancel} disabled={pending}>
+              {pending ? "Cancelling…" : "Cancel appointment"}
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
