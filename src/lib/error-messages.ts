@@ -27,6 +27,7 @@ export interface ApiErrorPayload {
   conflictingStaffName?: string;
   conflictingStart?: string;
   conflictingEnd?: string;
+  windowLabel?: string;
   appointmentLabel?: string;
   assignmentLabel?: string;
   detail?: string;
@@ -95,6 +96,12 @@ const MESSAGES: Record<string, MessageFactory> = {
       ? `${p.conflictingStaffName} is already booked${formatWindow(p.conflictingStart, p.conflictingEnd)}.`
       : "Another appointment already covers that slot.",
   end_before_start: "End time must be after the start time.",
+  in_the_past: "Pick a time in the future — that slot has already passed.",
+  outside_working_hours: (p) =>
+    p.windowLabel
+      ? `That slot is outside clinic hours (${p.windowLabel}). Pick a time within working hours.`
+      : "That slot is outside clinic working hours.",
+  therapist_inactive: "That therapist is inactive. Reactivate them or pick someone else.",
 
   // Consultations / clinical
   consultation_not_found: "Consultation not found.",

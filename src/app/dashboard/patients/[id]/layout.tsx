@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, isClinicalRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
+import { FlagBadges } from "@/components/flag-badges";
 
 export default async function PatientLayout({
   children,
@@ -24,6 +25,7 @@ export default async function PatientLayout({
         where: { endedAt: null },
         include: { staff: { select: { id: true, name: true } } },
       },
+      flags: { where: { isActive: true }, select: { type: true, label: true, color: true } },
     },
   });
   if (!client) notFound();
@@ -52,6 +54,7 @@ export default async function PatientLayout({
             {client.status}
           </Badge>
           <span className="text-sm text-muted-foreground">{client.clientCode}</span>
+          <FlagBadges flags={client.flags} />
         </div>
         <nav className="flex flex-wrap gap-1 border-b">
           {tabs.map((t) => (

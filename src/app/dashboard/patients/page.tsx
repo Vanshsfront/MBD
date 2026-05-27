@@ -7,6 +7,7 @@ import { activeCentreId } from "@/lib/centre";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FlagBadges } from "@/components/flag-badges";
 
 export const metadata = { title: "Patients — MBD Clinic OS" };
 
@@ -84,16 +85,12 @@ export default async function PatientsPage() {
                   className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 transition-colors hover:bg-accent"
                 >
                   <div>
-                    <p className="text-sm font-medium">
-                      {c.firstName} {c.lastName}{" "}
-                      {c.flags.length > 0
-                        ? c.flags.map((f) => (
-                            <Badge key={f.type} variant="warning" className="ml-1 text-[10px]">
-                              {f.label}
-                            </Badge>
-                          ))
-                        : null}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">
+                        {c.firstName} {c.lastName}
+                      </p>
+                      <FlagBadges flags={c.flags} max={4} />
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {c.clientCode} · {c.phone}
                       {c.age != null ? ` · ${c.age}${c.sex ?? ""}` : ""}

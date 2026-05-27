@@ -113,7 +113,9 @@ export function CalendarClient({
       if (!res.ok) {
         throw new Error(await readApiError(res, { fallback: "Couldn't move the appointment." }));
       }
+      const data = (await res.json().catch(() => ({}))) as { warning?: string };
       toast.success("Appointment moved");
+      if (data.warning) toast.warning(data.warning);
     } catch (err) {
       info.revert();
       toast.error(err instanceof Error ? err.message : "Move failed");
@@ -338,7 +340,9 @@ function CreateAppointmentDialog({
       if (!res.ok) {
         throw new Error(await readApiError(res, { fallback: "Couldn't book the appointment." }));
       }
+      const data = (await res.json().catch(() => ({}))) as { warning?: string };
       toast.success("Appointment booked");
+      if (data.warning) toast.warning(data.warning);
       onClose(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Book failed");

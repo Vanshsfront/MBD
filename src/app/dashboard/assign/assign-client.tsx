@@ -21,6 +21,7 @@ import {
   type IntakePayload,
 } from "@/components/intake/intake-form-shell";
 import { readApiError } from "@/lib/error-messages";
+import { Star } from "lucide-react";
 
 interface DraftClient {
   id: string;
@@ -219,7 +220,16 @@ function AssignPanel({
   const [referredByName, setReferredByName] = useState("");
   const [comment, setComment] = useState("");
   const [selectedTherapists, setSelectedTherapists] = useState<string[]>([]);
+  const [primaryId, setPrimaryId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  // Effective primary = the explicit pick if still selected, else the first
+  // selected therapist. PRD §4 A4: first assignment is primary by default, but
+  // the FO can now choose which one explicitly via the ★ control.
+  const effectivePrimary =
+    primaryId && selectedTherapists.includes(primaryId)
+      ? primaryId
+      : (selectedTherapists[0] ?? null);
 
   function toggleTherapist(id: string) {
     setSelectedTherapists((prev) =>
@@ -241,9 +251,9 @@ function AssignPanel({
           customerType,
           referralSourceId: referralSourceId || undefined,
           referredByName: referredByName.trim() || undefined,
-          therapists: selectedTherapists.map((staffId, i) => ({
+          therapists: selectedTherapists.map((staffId) => ({
             staffId,
-            isPrimary: i === 0,
+            isPrimary: staffId === effectivePrimary,
             comment: comment.trim() || undefined,
           })),
         }),
@@ -328,6 +338,7 @@ function AssignPanel({
           <Label className="mb-2 block">Assign therapist(s)</Label>
           <p className="mb-3 text-xs text-muted-foreground">
             Filtered to {eligibleDepartments.length === 0 ? "all departments" : eligibleDepartments.join(" / ")}.
+            Tick one or more — the ★ marks the primary therapist (first by default).
           </p>
           {matchingTherapists.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -353,23 +364,29 @@ function AssignPanel({
                 const matchingCategories = categoriesForDepartment(t.department).filter(
                   (c) => client.selectedCategories.includes(c.key),
                 );
+                const isSelected = selectedTherapists.includes(t.id);
+                const isPrimary = effectivePrimary === t.id;
                 return (
-                  <li key={t.id}>
-                    <label
-                      className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
-                        selectedTherapists.includes(t.id)
-                          ? "border-primary bg-secondary"
-                          : "hover:bg-accent"
-                      }`}
-                    >
+                  <li
+                    key={t.id}
+                    className={`flex items-start gap-2 rounded-md border p-3 transition-colors ${
+                      isSelected ? "border-primary bg-secondary" : "hover:bg-accent"
+                    }`}
+                  >
+                    <label className="flex flex-1 cursor-pointer items-start gap-3">
                       <input
                         type="checkbox"
-                        checked={selectedTherapists.includes(t.id)}
+                        checked={isSelected}
                         onChange={() => toggleTherapist(t.id)}
                         className="mt-0.5 h-4 w-4"
                       />
                       <div className="flex-1 space-y-1">
-                        <p className="text-sm font-medium">{t.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{t.name}</p>
+                          {isPrimary ? (
+                            <Badge variant="info" className="text-[10px]">★ Primary</Badge>
+                          ) : null}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {t.designation ?? t.role} · {t.department ?? "—"}
                         </p>
@@ -389,6 +406,21 @@ function AssignPanel({
                         ) : null}
                       </div>
                     </label>
+                    {isSelected && !isPrimary ? (
+                      <button
+                        type="button"
+                        onClick={() => setPrimaryId(t.id)}
+                        className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-1 text-[10px] font-medium text-[color:var(--text-secondary)] hover:border-primary hover:text-primary"
+                        title="Make this the primary therapist"
+                      >
+                        <Star className="h-3 w-3" /> Set primary
+                      </button>
+                    ) : null}
+                    {isPrimary ? (
+                      <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 px-2 py-1 text-[10px] font-semibold text-primary">
+                        <Star className="h-3 w-3 fill-current" /> Primary
+                      </span>
+                    ) : null}
                   </li>
                 );
               })}

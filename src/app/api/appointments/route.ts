@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, requireAuth, requestMeta } from "@/lib/api-auth";
 import { createAuditLog, computeChanges } from "@/lib/audit";
 import { isClinicalRole } from "@/lib/permissions";
+import { validateAppointmentTiming, ADJACENCY_WINDOW_MINUTES } from "@/lib/appointments";
 
 const createSchema = z.object({
   clientId: z.string().min(1),
@@ -57,6 +58,31 @@ async function findClash(
   };
 }
 
+// Non-blocking warning: does this patient already have an appointment within
+// ±15 minutes of the proposed slot? (PRD §6 punchlist #9 — warn, don't block.)
+async function patientAdjacencyWarning(
+  clientId: string,
+  start: Date,
+  end: Date,
+  excludeId?: string,
+): Promise<string | undefined> {
+  const w = ADJACENCY_WINDOW_MINUTES * 60_000;
+  const near = await prisma.appointment.findFirst({
+    where: {
+      clientId,
+      status: { in: ["CONFIRMED", "RESCHEDULED"] },
+      startTime: { lt: new Date(end.getTime() + w) },
+      endTime: { gt: new Date(start.getTime() - w) },
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+    },
+    include: { therapist: { select: { name: true } } },
+  });
+  if (!near) return undefined;
+  return `Heads up: this patient already has an appointment near this time${
+    near.therapist?.name ? ` with ${near.therapist.name}` : ""
+  }.`;
+}
+
 export async function POST(req: Request) {
   const auth = await requirePermission("appointments:book_reschedule_cancel");
   if (!auth.ok) return auth.response;
@@ -72,9 +98,19 @@ export async function POST(req: Request) {
   const f = parsed.data;
   const start = new Date(f.startTime);
   const end = new Date(f.endTime);
-  if (!(end > start)) {
-    return NextResponse.json({ error: "end_before_start" }, { status: 400 });
+
+  const timing = validateAppointmentTiming(start, end);
+  if (timing.error) {
+    return NextResponse.json({ error: timing.error, windowLabel: timing.windowLabel }, { status: 400 });
   }
+
+  const therapist = await prisma.staff.findUnique({
+    where: { id: f.therapistId },
+    select: { isActive: true },
+  });
+  if (!therapist) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!therapist.isActive) return NextResponse.json({ error: "therapist_inactive" }, { status: 409 });
+
   const clash = await findClash(f.therapistId, start, end);
   if (clash) {
     return NextResponse.json({ error: "clash", ...clash }, { status: 409 });
@@ -82,6 +118,8 @@ export async function POST(req: Request) {
 
   const client = await prisma.client.findUnique({ where: { id: f.clientId } });
   if (!client) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
+
+  const warning = await patientAdjacencyWarning(f.clientId, start, end);
 
   const appointment = await prisma.appointment.create({
     data: {
@@ -131,6 +169,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     appointment: serialise(appointment),
+    warning,
   });
 }
 
@@ -153,14 +192,26 @@ export async function PATCH(req: Request) {
 
   const newStart = f.startTime ? new Date(f.startTime) : existing.startTime;
   const newEnd = f.endTime ? new Date(f.endTime) : existing.endTime;
-  if (!(newEnd > newStart)) {
-    return NextResponse.json({ error: "end_before_start" }, { status: 400 });
-  }
+  let warning: string | undefined;
+  // Timing rules only apply to reschedules (a pure status change — e.g.
+  // cancelling a past appointment — must still be allowed).
   if (f.startTime || f.endTime) {
+    const timing = validateAppointmentTiming(newStart, newEnd);
+    if (timing.error) {
+      return NextResponse.json({ error: timing.error, windowLabel: timing.windowLabel }, { status: 400 });
+    }
+    const therapist = await prisma.staff.findUnique({
+      where: { id: existing.therapistId },
+      select: { isActive: true },
+    });
+    if (therapist && !therapist.isActive) {
+      return NextResponse.json({ error: "therapist_inactive" }, { status: 409 });
+    }
     const clash = await findClash(existing.therapistId, newStart, newEnd, f.id);
     if (clash) {
       return NextResponse.json({ error: "clash", ...clash }, { status: 409 });
     }
+    warning = await patientAdjacencyWarning(existing.clientId, newStart, newEnd, f.id);
   }
 
   const updated = await prisma.appointment.update({
@@ -200,7 +251,7 @@ export async function PATCH(req: Request) {
     userAgent: meta.userAgent,
   });
 
-  return NextResponse.json({ ok: true, appointment: serialise(updated) });
+  return NextResponse.json({ ok: true, appointment: serialise(updated), warning });
 }
 
 export async function GET(req: Request) {
