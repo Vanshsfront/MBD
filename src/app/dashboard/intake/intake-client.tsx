@@ -114,7 +114,7 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
+      <div className="grid gap-6 md:grid-cols-[360px_1fr]">
         <ActiveTokenCard token={active} now={now} />
 
         <Card>
