@@ -5,6 +5,7 @@ import { hasPermission, isClinicalRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { FlagBadges } from "@/components/flag-badges";
+import { AccessBlocked } from "./access-blocked";
 
 export default async function PatientLayout({
   children,
@@ -21,19 +22,26 @@ export default async function PatientLayout({
   const client = await prisma.client.findUnique({
     where: { id },
     include: {
-      doctorAssignments: {
-        where: { endedAt: null },
-        include: { staff: { select: { id: true, name: true } } },
-      },
+      // All assignments (active + ended): an ever-assigned clinician may open
+      // the record (the clinical page renders reassigned-away as view-only);
+      // only the never-assigned are blocked.
+      doctorAssignments: { select: { staffId: true } },
       flags: { where: { isActive: true }, select: { type: true, label: true, color: true } },
     },
   });
   if (!client) notFound();
 
-  // Enforce assigned-only visibility for clinical roles (PRD §3.2 Q1).
+  // Enforce assigned-only visibility for clinical roles (PRD §3.2 Q1). Truly
+  // unassigned → a clear blocked card (OG audit fix), NOT a silent redirect.
   if (isClinicalRole(session.user.role)) {
-    const assigned = client.doctorAssignments.some((a) => a.staffId === session.user.id);
-    if (!assigned) redirect("/dashboard/patients");
+    const everAssigned = client.doctorAssignments.some((a) => a.staffId === session.user.id);
+    if (!everAssigned) {
+      return (
+        <div className="py-10">
+          <AccessBlocked />
+        </div>
+      );
+    }
   }
 
   const tabs = [

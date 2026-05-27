@@ -208,5 +208,10 @@ function ReportLink({ href, label }: { href: string; label: string }) {
 }
 
 function firstName(s: string): string {
-  return s.split(" ")[0] ?? s;
+  // Skip a leading honorific (Dr./Mr./Ms./Prof.) so "Dr. Devanshi Vira" greets
+  // as "Devanshi", not "Dr.". Falls back to the full name if nothing remains.
+  const parts = s.trim().split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < parts.length - 1 && /^(dr|mr|mrs|ms|prof|miss)\.?$/i.test(parts[i]!)) i++;
+  return parts[i] ?? s;
 }
