@@ -15,6 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { readApiError } from "@/lib/error-messages";
 
 interface AppointmentOption {
@@ -197,23 +204,28 @@ export function NewChangeRequestForm({ appointments, assignments, candidateStaff
             <div className="space-y-3 rounded-md border bg-muted/30 p-4">
               <div className="space-y-1.5">
                 <Label>Appointment</Label>
-                <select
+                <Select
                   value={appointmentId}
-                  onChange={(e) => pickAppointment(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-                  required
+                  onValueChange={pickAppointment}
+                  disabled={appointments.length === 0}
                 >
-                  <option value="">
-                    {appointments.length === 0
-                      ? "You have no upcoming appointments"
-                      : "Select an appointment…"}
-                  </option>
-                  {appointments.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {fmt(a.startIso)} — {a.clientName} ({a.clientCode}) · {a.serviceName}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        appointments.length === 0
+                          ? "You have no upcoming appointments"
+                          : "Select an appointment…"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {appointments.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {fmt(a.startIso)} — {a.clientName} ({a.clientCode}) · {a.serviceName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {selectedAppt ? (
@@ -250,46 +262,56 @@ export function NewChangeRequestForm({ appointments, assignments, candidateStaff
             <div className="space-y-3 rounded-md border bg-muted/30 p-4">
               <div className="space-y-1.5">
                 <Label>Patient / assignment</Label>
-                <select
+                <Select
                   value={assignmentId}
-                  onChange={(e) => setAssignmentId(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-                  required
+                  onValueChange={setAssignmentId}
+                  disabled={assignments.length === 0}
                 >
-                  <option value="">
-                    {assignments.length === 0
-                      ? "You have no active assignments"
-                      : "Select a patient…"}
-                  </option>
-                  {assignments.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.clientName} ({a.clientCode})
-                      {a.isPrimary ? " · primary" : ""}
-                      {a.serviceName ? ` · ${a.serviceName}` : ""}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        assignments.length === 0
+                          ? "You have no active assignments"
+                          : "Select a patient…"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignments.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.clientName} ({a.clientCode})
+                        {a.isPrimary ? " · primary" : ""}
+                        {a.serviceName ? ` · ${a.serviceName}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>New therapist (same department)</Label>
-                <select
+                <Select
                   value={toStaffId}
-                  onChange={(e) => setToStaffId(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-                  required
+                  onValueChange={setToStaffId}
+                  disabled={candidateStaff.length === 0}
                 >
-                  <option value="">
-                    {candidateStaff.length === 0
-                      ? "No other staff in your department"
-                      : "Select…"}
-                  </option>
-                  {candidateStaff.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                      {s.designation ? ` · ${s.designation}` : ""}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        candidateStaff.length === 0
+                          ? "No other staff in your department"
+                          : "Select…"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {candidateStaff.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                        {s.designation ? ` · ${s.designation}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           ) : null}

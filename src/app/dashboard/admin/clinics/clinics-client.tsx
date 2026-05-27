@@ -8,6 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
 
 interface CentreRow {
@@ -201,18 +209,22 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label>Copy services + products from</Label>
-              <select
-                value={form.copyFromCentreId}
-                onChange={(e) => update("copyFromCentreId", e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              <Select
+                value={form.copyFromCentreId === "" ? SELECT_NONE : form.copyFromCentreId}
+                onValueChange={(v) => update("copyFromCentreId", v === SELECT_NONE ? "" : v)}
               >
-                <option value="">— start blank —</option>
-                {centres.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.serviceCount} services)
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="— start blank —" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SELECT_NONE}>— start blank —</SelectItem>
+                  {centres.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name} ({c.serviceCount} services)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-[11px] text-muted-foreground">
                 Staff are NOT copied. Stock starts at 0; record stock-ins after opening.
               </p>

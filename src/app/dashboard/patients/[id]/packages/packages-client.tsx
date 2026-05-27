@@ -9,7 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatINR } from "@/lib/utils";
+import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
 
 interface PackageRow {
@@ -189,19 +197,23 @@ export function PackagesView({
               <div className="space-y-1.5">
                 <Label>Linked consultation</Label>
                 <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={consultationId}
-                    onChange={(e) => setConsultationId(e.target.value)}
-                    className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                  <Select
+                    value={consultationId === "" ? SELECT_NONE : consultationId}
+                    onValueChange={(v) => setConsultationId(v === SELECT_NONE ? "" : v)}
                   >
-                    <option value="">— none —</option>
-                    {consultations.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {new Date(c.date).toLocaleDateString("en-IN")} · {c.templateKey}
-                        {c.recommendedSessions ? ` · ${c.recommendedSessions} rec.` : ""}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="— none —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SELECT_NONE}>— none —</SelectItem>
+                      {consultations.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {new Date(c.date).toLocaleDateString("en-IN")} · {c.templateKey}
+                          {c.recommendedSessions ? ` · ${c.recommendedSessions} rec.` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
                     type="button"
                     variant="outline"
@@ -219,19 +231,19 @@ export function PackagesView({
 
             <div className="space-y-1.5">
               <Label>Add service</Label>
-              <select
-                value=""
-                onChange={(e) => add(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-              >
-                <option value="">Select…</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} {s.department ? `· ${s.department}` : ""} · {formatINR(s.basePrice)}
-                    {s.participantCount > 1 ? ` (qty ×${s.participantCount})` : ""}
-                  </option>
-                ))}
-              </select>
+              <Select value="" onValueChange={(v) => add(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name} {s.department ? `· ${s.department}` : ""} · {formatINR(s.basePrice)}
+                      {s.participantCount > 1 ? ` (qty ×${s.participantCount})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {mix.length > 0 ? (
@@ -289,18 +301,22 @@ export function PackagesView({
               </div>
               <div className="space-y-1.5">
                 <Label>Promo code</Label>
-                <select
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                <Select
+                  value={promoCode === "" ? SELECT_NONE : promoCode}
+                  onValueChange={(v) => setPromoCode(v === SELECT_NONE ? "" : v)}
                 >
-                  <option value="">— none —</option>
-                  {promotions.map((p) => (
-                    <option key={p.code} value={p.code}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="— none —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={SELECT_NONE}>— none —</SelectItem>
+                    {promotions.map((p) => (
+                      <SelectItem key={p.code} value={p.code}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

@@ -7,6 +7,13 @@ import { useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ───────── Field wrappers ─────────
 
@@ -365,22 +372,27 @@ export function RecommendationPicker({
   };
   return (
     <div className="space-y-2">
-      <select
+      <Select
         value=""
-        onChange={(e) => add(e.target.value)}
+        onValueChange={(v) => add(v)}
         disabled={disabled || services.length === 0}
-        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
       >
-        <option value="">
-          {services.length === 0 ? "No services in this department" : "Add a service…"}
-        </option>
-        {services.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name} (₹{s.basePrice})
-            {s.participantCount > 1 ? ` · qty=${s.participantCount}` : ""}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger>
+          <SelectValue
+            placeholder={
+              services.length === 0 ? "No services in this department" : "Add a service…"
+            }
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {services.map((s) => (
+            <SelectItem key={s.id} value={s.id}>
+              {s.name} (₹{s.basePrice})
+              {s.participantCount > 1 ? ` · qty=${s.participantCount}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {value.length > 0 ? (
         <ul className="space-y-1.5">
           {value.map((r) => (

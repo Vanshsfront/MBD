@@ -18,6 +18,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
 
 interface TherapistOption {
@@ -143,19 +151,22 @@ export function CalendarClient({
             <Label htmlFor="therapist-filter" className="text-xs">
               Therapist
             </Label>
-            <select
-              id="therapist-filter"
-              value={therapistFilter}
-              onChange={(e) => setTherapistFilter(e.target.value)}
-              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            <Select
+              value={therapistFilter === "" ? SELECT_NONE : therapistFilter}
+              onValueChange={(v) => setTherapistFilter(v === SELECT_NONE ? "" : v)}
             >
-              <option value="">All</option>
-              {therapists.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="therapist-filter" className="w-48">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SELECT_NONE}>All</SelectItem>
+                {therapists.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         ) : null}
       </header>
@@ -376,49 +387,48 @@ function CreateAppointmentDialog({
       <div className="space-y-3">
         <div className="space-y-1.5">
           <Label>Patient</Label>
-          <select
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-          >
-            <option value="">Select…</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+          <Select value={clientId} onValueChange={setClientId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select…" />
+            </SelectTrigger>
+            <SelectContent>
+              {clients.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1.5">
           <Label>Therapist</Label>
-          <select
-            value={therapistId}
-            onChange={(e) => setTherapistId(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-          >
-            <option value="">Select…</option>
-            {eligibleTherapists.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} {t.department ? `· ${t.department}` : ""}
-              </option>
-            ))}
-          </select>
+          <Select value={therapistId} onValueChange={setTherapistId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select…" />
+            </SelectTrigger>
+            <SelectContent>
+              {eligibleTherapists.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name} {t.department ? `· ${t.department}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1.5">
           <Label>Service</Label>
-          <select
-            value={serviceId}
-            onChange={(e) => setServiceId(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-            disabled={!therapistId}
-          >
-            <option value="">Select…</option>
-            {eligibleServices.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} (₹{s.basePrice})
-              </option>
-            ))}
-          </select>
+          <Select value={serviceId} onValueChange={setServiceId} disabled={!therapistId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select…" />
+            </SelectTrigger>
+            <SelectContent>
+              {eligibleServices.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name} (₹{s.basePrice})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
         </div>
@@ -512,15 +522,19 @@ function EventDetailDialog({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Cancelled by</Label>
-              <select
+              <Select
                 value={cancelledBy}
-                onChange={(e) => setCancelledBy(e.target.value as typeof cancelledBy)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                onValueChange={(v) => setCancelledBy(v as typeof cancelledBy)}
               >
-                <option value="PATIENT">Patient</option>
-                <option value="THERAPIST">Therapist</option>
-                <option value="CLINIC">Clinic</option>
-              </select>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PATIENT">Patient</SelectItem>
+                  <SelectItem value="THERAPIST">Therapist</SelectItem>
+                  <SelectItem value="CLINIC">Clinic</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Reason</Label>

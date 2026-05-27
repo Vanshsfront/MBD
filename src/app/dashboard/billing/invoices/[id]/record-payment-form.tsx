@@ -7,6 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { readApiError } from "@/lib/error-messages";
 
 const METHODS = ["CASH", "CARD", "UPI", "NEFT", "CHEQUE", "RAZORPAY", "OTHER"] as const;
@@ -78,18 +85,21 @@ export function RecordPaymentForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pay-method">Method</Label>
-            <select
-              id="pay-method"
+            <Select
               value={method}
-              onChange={(e) => setMethod(e.target.value as (typeof METHODS)[number])}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              onValueChange={(v) => setMethod(v as (typeof METHODS)[number])}
             >
-              {METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="pay-method">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {METHODS.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pay-ref">Reference (optional)</Label>

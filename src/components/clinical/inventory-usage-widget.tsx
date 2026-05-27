@@ -9,6 +9,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Section } from "./shared";
 
 export interface InventoryItemOption {
@@ -69,23 +76,28 @@ export function InventoryUsageWidget({
     >
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <select
+          <Select
             value={pickerId}
-            onChange={(e) => setPickerId(e.target.value)}
+            onValueChange={setPickerId}
             disabled={disabled || options.length === 0}
-            className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
           >
-            <option value="">
-              {options.length === 0
-                ? "No products with stock in this centre"
-                : "Pick a product…"}
-            </option>
-            {options.map((o) => (
-              <option key={o.inventoryItemId} value={o.inventoryItemId}>
-                {o.productName} · {o.stock} in stock
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="flex-1">
+              <SelectValue
+                placeholder={
+                  options.length === 0
+                    ? "No products with stock in this centre"
+                    : "Pick a product…"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((o) => (
+                <SelectItem key={o.inventoryItemId} value={o.inventoryItemId}>
+                  {o.productName} · {o.stock} in stock
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button type="button" variant="outline" size="sm" onClick={add} disabled={disabled || !pickerId}>
             Add
           </Button>

@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatINR } from "@/lib/utils";
 import { readApiError } from "@/lib/error-messages";
 
@@ -149,16 +156,20 @@ export function PromotionsAdminView({ promos }: { promos: PromoRow[] }) {
             </div>
             <div className="space-y-1.5">
               <Label>Type</Label>
-              <select
+              <Select
                 value={form.discountType}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, discountType: e.target.value as "PERCENT" | "FLAT" }))
+                onValueChange={(v) =>
+                  setForm((p) => ({ ...p, discountType: v as "PERCENT" | "FLAT" }))
                 }
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
               >
-                <option value="PERCENT">% off</option>
-                <option value="FLAT">Flat ₹ off</option>
-              </select>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PERCENT">% off</SelectItem>
+                  <SelectItem value="FLAT">Flat ₹ off</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Value</Label>

@@ -10,6 +10,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SELECT_NONE } from "@/lib/select-styles";
+import {
   SERVICE_CATEGORIES,
   categoriesForDepartment,
   departmentsForCategories,
@@ -299,30 +307,38 @@ function AssignPanel({
         <section className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Customer type</Label>
-            <select
+            <Select
               value={customerType}
-              onChange={(e) => setCustomerType(e.target.value as typeof customerType)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              onValueChange={(v) => setCustomerType(v as typeof customerType)}
             >
-              <option value="WALK_IN">Walk-in</option>
-              <option value="BOOKING">Pre-booking</option>
-              <option value="REFERRAL">Referral</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="WALK_IN">Walk-in</SelectItem>
+                <SelectItem value="BOOKING">Pre-booking</SelectItem>
+                <SelectItem value="REFERRAL">Referral</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Referral source</Label>
-            <select
-              value={referralSourceId}
-              onChange={(e) => setReferralSourceId(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            <Select
+              value={referralSourceId === "" ? SELECT_NONE : referralSourceId}
+              onValueChange={(v) => setReferralSourceId(v === SELECT_NONE ? "" : v)}
             >
-              <option value="">— none —</option>
-              {referralSources.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="— none —" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SELECT_NONE}>— none —</SelectItem>
+                {referralSources.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Referred by (free text)</Label>

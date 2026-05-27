@@ -17,7 +17,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatINR } from "@/lib/utils";
+import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
 
 // ──────── Inputs ────────
@@ -373,19 +381,18 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Patient</Label>
-              <select
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                required
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-              >
-                <option value="">Select…</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+              <Select value={clientId} onValueChange={setClientId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Referred by (optional)</Label>
@@ -476,38 +483,44 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
                     {flavor === "SERVICES" || flavor === "PROFORMA" ? (
                       <div className="space-y-1.5 sm:col-span-2">
                         <Label className="text-xs">Service</Label>
-                        <select
+                        <Select
                           value={l.serviceId ?? ""}
-                          onChange={(e) => pickService(idx, e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                          onValueChange={(v) => pickService(idx, v)}
                         >
-                          <option value="">Select…</option>
-                          {services.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                              {s.department ? ` · ${s.department}` : ""} · ₹{s.basePrice}
-                              {s.participantCount > 1 ? ` · qty=${s.participantCount}` : ""}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {services.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}
+                                {s.department ? ` · ${s.department}` : ""} · ₹{s.basePrice}
+                                {s.participantCount > 1 ? ` · qty=${s.participantCount}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     ) : null}
 
                     {flavor === "PRODUCTS" ? (
                       <div className="space-y-1.5 sm:col-span-2">
                         <Label className="text-xs">Product</Label>
-                        <select
+                        <Select
                           value={l.productId ?? ""}
-                          onChange={(e) => pickProduct(idx, e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                          onValueChange={(v) => pickProduct(idx, v)}
                         >
-                          <option value="">Select…</option>
-                          {products.map((p) => (
-                            <option key={p.productId} value={p.productId}>
-                              {p.name} · ₹{p.sellingPrice} · {p.stock} in stock
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {products.map((p) => (
+                              <SelectItem key={p.productId} value={p.productId}>
+                                {p.name} · ₹{p.sellingPrice} · {p.stock} in stock
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     ) : null}
 
@@ -533,10 +546,10 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
 
                     <div className="space-y-1.5">
                       <Label className="text-xs">Consultant</Label>
-                      <select
-                        value={l.consultantId ?? ""}
-                        onChange={(e) => {
-                          const s = staff.find((x) => x.id === e.target.value);
+                      <Select
+                        value={l.consultantId ?? SELECT_NONE}
+                        onValueChange={(v) => {
+                          const s = staff.find((x) => x.id === v);
                           setLines((prev) =>
                             prev.map((row, i) =>
                               i === idx
@@ -549,15 +562,19 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
                             ),
                           );
                         }}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                       >
-                        <option value="">— none —</option>
-                        {staff.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="— none —" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SELECT_NONE}>— none —</SelectItem>
+                          {staff.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-1.5">
@@ -663,18 +680,22 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
             </div>
             <div className="space-y-1.5">
               <Label>Promo code</Label>
-              <select
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              <Select
+                value={promoCode === "" ? SELECT_NONE : promoCode}
+                onValueChange={(v) => setPromoCode(v === SELECT_NONE ? "" : v)}
               >
-                <option value="">— none —</option>
-                {promotions.map((p) => (
-                  <option key={p.code} value={p.code}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="— none —" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SELECT_NONE}>— none —</SelectItem>
+                  {promotions.map((p) => (
+                    <SelectItem key={p.code} value={p.code}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
