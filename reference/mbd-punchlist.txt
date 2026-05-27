@@ -1,0 +1,23 @@
+front office doesn't have permission to save and continue to consent at assignment queue
+
+Digital signature is for record-keeping only. Not legally binding without an audit-trailed e-signature provider.-> to be kept as a digital sign (ipad or upload) right now and decided on later. 
+
+Front office selects serviceFO only assigns therapist. Therapist decides service. Hard rule.
+
+Multiple therapists per patient (FO can assign 2+ at intake | frame as add additional therapists/areas UI flow)
+
+recents tab for invoicing (pulls from therapist's thing + master database for services and products)
+
+Packages aren't working | patient name, services etc. and sessions done + | 
+
+admin should have a audit trail for everything (things like stock being added etc.)
+
+Client flags etc. 
+
+validate reschedule
+
+Therapist flow needs to be rock solid. 
+
+Forms need to be filled I.e. the digital versions (in our UI) should match all the details as those the form folder. Map the right forms to the right therapist's flow. 
+
+Create proper credentials for everyone as well 
