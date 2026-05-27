@@ -2,6 +2,7 @@
 // Public counterpart at /api/intake/[token]/submit accepts the patient form.
 
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
@@ -9,9 +10,16 @@ import { activeCentreId } from "@/lib/centre";
 
 const TOKEN_TTL_MIN = 60;
 
+const bodySchema = z.object({ label: z.string().trim().max(60).optional() });
+
 export async function POST(req: Request) {
   const auth = await requirePermission("patients:generate_intake_qr");
   if (!auth.ok) return auth.response;
+
+  // Optional friendly label so the FO sees "Walk-in — Ramesh" instead of a raw
+  // token id. Body may be empty.
+  const parsed = bodySchema.safeParse(await req.json().catch(() => ({})));
+  const label = parsed.success && parsed.data.label ? parsed.data.label : null;
 
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MIN * 60 * 1000);
   // The new IntakeToken should land in the centre the user is *currently
@@ -22,6 +30,7 @@ export async function POST(req: Request) {
     data: {
       expiresAt,
       centreId,
+      label,
       createdById: auth.user.id,
       status: "PENDING",
     },
@@ -43,6 +52,7 @@ export async function POST(req: Request) {
     id: token.id,
     token: token.token,
     expiresAt: token.expiresAt,
+    label: token.label,
   });
 }
 
@@ -81,6 +91,7 @@ export async function GET() {
       expiresAt: t.expiresAt,
       createdAt: t.createdAt,
       createdBy: t.createdBy?.name ?? null,
+      label: t.label,
       clientId: t.clientId,
     })),
   );

@@ -38,6 +38,7 @@ export default async function IntakePage() {
         expiresAt: t.expiresAt.toISOString(),
         createdAt: t.createdAt.toISOString(),
         createdBy: t.createdBy?.name ?? null,
+        label: t.label,
         clientId: t.clientId,
       }))}
     />

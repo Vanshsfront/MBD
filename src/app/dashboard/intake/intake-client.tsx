@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { readApiError } from "@/lib/error-messages";
 
 interface TokenView {
@@ -15,6 +16,7 @@ interface TokenView {
   expiresAt: string;
   createdAt: string;
   createdBy: string | null;
+  label: string | null;
   clientId: string | null;
 }
 
@@ -24,6 +26,7 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
   const [active, setActive] = useState<TokenView | null>(
     initialTokens.find((t) => t.status === "PENDING") ?? null,
   );
+  const [label, setLabel] = useState("");
 
   // `now` is a real timestamp (ms), re-synced every 30s so the "Expires in"
   // countdown stays fresh and PENDING flips to EXPIRED visually. It's only ever
@@ -46,13 +49,22 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
   async function generate() {
     setPending(true);
     try {
-      const res = await fetch("/api/intake-token", { method: "POST" });
+      const res = await fetch("/api/intake-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: label.trim() || undefined }),
+      });
       if (!res.ok) {
         throw new Error(
           await readApiError(res, { fallback: "Couldn't generate an intake QR." }),
         );
       }
-      const created = (await res.json()) as { id: string; token: string; expiresAt: string };
+      const created = (await res.json()) as {
+        id: string;
+        token: string;
+        expiresAt: string;
+        label?: string | null;
+      };
       const next: TokenView = {
         id: created.id,
         token: created.token,
@@ -60,10 +72,12 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
         expiresAt: created.expiresAt,
         createdAt: new Date().toISOString(),
         createdBy: "you",
+        label: created.label ?? (label.trim() || null),
         clientId: null,
       };
       setTokens((prev) => [next, ...prev]);
       setActive(next);
+      setLabel("");
       toast.success("Intake QR generated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create token");
@@ -81,9 +95,23 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
             Generate a QR code for a walk-in patient to fill the intake form on their phone.
           </p>
         </div>
-        <Button onClick={generate} disabled={pending}>
-          {pending ? "Generating…" : "Generate QR"}
-        </Button>
+        <div className="flex items-end gap-2">
+          <div className="space-y-1">
+            <label className="text-xs uppercase tracking-wide text-muted-foreground">
+              Label (optional)
+            </label>
+            <Input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Walk-in — Ramesh, 3pm"
+              className="w-56"
+              maxLength={60}
+            />
+          </div>
+          <Button onClick={generate} disabled={pending}>
+            {pending ? "Generating…" : "Generate QR"}
+          </Button>
+        </div>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
@@ -106,7 +134,9 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
                     <div className="flex items-center gap-3">
                       <StatusBadge status={t.status} />
                       <div>
-                        <p className="text-sm font-medium">{t.token.slice(0, 10)}…</p>
+                        <p className="text-sm font-medium">
+                          {t.label ?? `${t.token.slice(0, 10)}…`}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           Created {new Date(t.createdAt).toLocaleString()} ·{" "}
                           {t.createdBy ?? "system"}
@@ -169,7 +199,12 @@ function ActiveTokenCard({ token, now }: { token: TokenView | null; now: number 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Patient scans this</CardTitle>
+        <div className="min-w-0">
+          <CardTitle className="truncate">{token.label ?? "Patient scans this"}</CardTitle>
+          {token.label ? (
+            <p className="text-xs text-muted-foreground">Patient scans this QR</p>
+          ) : null}
+        </div>
         <Badge variant={minsLeft != null && minsLeft > 5 ? "info" : "warning"}>
           {minsLeft === null ? "…" : minsLeft === 0 ? "expired" : `${minsLeft} min left`}
         </Badge>
