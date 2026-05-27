@@ -8,6 +8,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
+import { activeCentreId } from "@/lib/centre";
 
 const createSchema = z.object({
   invoiceId: z.string().min(1),
@@ -64,13 +65,21 @@ export async function POST(req: Request) {
       data: { paidAmount: newPaid, status: newStatus },
     });
 
-    // Update MIS entries proportionally. Each entry's share of the new
-    // payment is amount * (entry.netPayable / total).
+    // Update MIS entries proportionally. Each entry's share is
+    // amount * (entry.netPayable / total). The LAST entry gets the rounding
+    // remainder so the allocated amounts sum to f.amount exactly (no paise drift).
     const total = invoice.totalAmount;
-    if (total > 0) {
-      for (const m of invoice.misEntries) {
-        const share = m.netPayableAmount / total;
-        const allocated = f.amount * share;
+    const entries = invoice.misEntries;
+    if (total > 0 && entries.length > 0) {
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      let allocatedSoFar = 0;
+      for (let i = 0; i < entries.length; i++) {
+        const m = entries[i]!;
+        const isLast = i === entries.length - 1;
+        const allocated = isLast
+          ? round2(f.amount - allocatedSoFar)
+          : round2(f.amount * (m.netPayableAmount / total));
+        allocatedSoFar = round2(allocatedSoFar + allocated);
         await tx.misEntry.update({
           where: { id: m.id },
           data: {
@@ -127,7 +136,9 @@ export async function GET(_req: Request) {
   const auth = await requirePermission("billing:view_payments");
   if (!auth.ok) return auth.response;
 
+  const centreId = await activeCentreId();
   const payments = await prisma.payment.findMany({
+    where: centreId ? { invoice: { centreId } } : {},
     orderBy: { paymentDate: "desc" },
     take: 100,
     include: {

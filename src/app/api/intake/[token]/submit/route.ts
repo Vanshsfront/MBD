@@ -53,11 +53,6 @@ const intakeSchema = z.object({
   cancellationPolicy: z.literal(true, { message: "cancellation_required" }),
 });
 
-async function nextClientCode(centreSlug: string): Promise<string> {
-  const count = await prisma.client.count();
-  return `${centreSlug}-${(count + 1).toString().padStart(4, "0")}`;
-}
-
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const tokenRow = await prisma.intakeToken.findUnique({
@@ -90,7 +85,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const f = parsed.data;
 
   const centreSlug = tokenRow.centre?.slug ?? "COL-MBD";
-  const clientCode = await nextClientCode(centreSlug);
 
   // Server-side compute of age from dob — the form sends `age` as a hint
   // only; we trust the dob and recompute so the audit trail is consistent.
@@ -104,6 +98,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   })();
 
   const result = await prisma.$transaction(async (tx) => {
+    // Atomic, race-safe client code via a per-centre counter (mirrors
+    // InvoiceCounter). Initialised from the current count on first use so it
+    // continues past seeded codes. The increment holds a row lock, so
+    // concurrent intakes get distinct sequences.
+    let seq: number;
+    if (tokenRow.centreId) {
+      const existing = await tx.clientCodeCounter.findUnique({ where: { centreId: tokenRow.centreId } });
+      if (!existing) {
+        const base = await tx.client.count({ where: { centreId: tokenRow.centreId } });
+        await tx.clientCodeCounter.create({ data: { centreId: tokenRow.centreId, lastSequence: base } });
+      }
+      const updated = await tx.clientCodeCounter.update({
+        where: { centreId: tokenRow.centreId },
+        data: { lastSequence: { increment: 1 } },
+      });
+      seq = updated.lastSequence;
+    } else {
+      seq = (await tx.client.count()) + 1;
+    }
+    const clientCode = `${centreSlug}-${seq.toString().padStart(4, "0")}`;
+
     const client = await tx.client.create({
       data: {
         clientCode,
@@ -149,7 +164,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       data: { status: "COMPLETED", isUsed: true, clientId: client.id, formData: JSON.stringify(f) },
     });
 
-    return { client, intakeForm };
+    return { client, intakeForm, clientCode };
   });
 
   // Audit — use the FO who issued the token as performer (public flow has
@@ -161,7 +176,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       entity: "Client",
       entityId: result.client.id,
       performedById: performer,
-      changes: { clientCode: { old: null, new: clientCode }, status: { old: null, new: "DRAFT" } },
+      changes: { clientCode: { old: null, new: result.clientCode }, status: { old: null, new: "DRAFT" } },
       metadata: { source: "public-intake", tokenId: tokenRow.id },
     });
     await createAuditLog({

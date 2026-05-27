@@ -16,6 +16,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
+import { validateAppointmentTiming } from "@/lib/appointments";
 
 // ───────── Schemas ─────────
 
@@ -261,8 +262,11 @@ async function approveReschedule(
   const { crId, response, reviewerId, requesterId, payload, meta } = args;
   const newStart = new Date(payload.toStartIso);
   const newEnd = new Date(payload.toEndIso);
-  if (!(newEnd > newStart)) {
-    return NextResponse.json({ error: "end_before_start" }, { status: 400 });
+  // Same timing rules the calendar enforces: end after start, not in the past,
+  // within clinic working hours. (Previously only end>start was checked here.)
+  const timing = validateAppointmentTiming(newStart, newEnd);
+  if (timing.error) {
+    return NextResponse.json({ error: timing.error, windowLabel: timing.windowLabel }, { status: 400 });
   }
 
   const existing = await prisma.appointment.findUnique({

@@ -51,6 +51,13 @@ model InvoiceCounter {
   @@unique([centreId, financialYear])
 }
 
+// ─── CLIENT CODE COUNTER (atomic, race-safe per-centre client numbering) ─
+model ClientCodeCounter {
+  id           String @id @default(cuid())
+  centreId     String @unique
+  lastSequence Int    @default(0)
+}
+
 // ─── DEPARTMENT ──────────────────────────────────────
 model Department {
   id             String  @id @default(cuid())
@@ -254,6 +261,7 @@ model IntakeToken {
   token     String   @unique @default(cuid())
   isUsed    Boolean  @default(false)
   expiresAt DateTime
+  label     String? // optional friendly name shown to FO (e.g. "Walk-in — Ramesh")
   formData  String? // JSON snapshot
   status    String   @default("PENDING") // PENDING | COMPLETED | EXPIRED
 

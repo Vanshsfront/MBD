@@ -25,12 +25,22 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
     initialTokens.find((t) => t.status === "PENDING") ?? null,
   );
 
-  // Tick every 30s so the "Expires in" countdown stays fresh and PENDING flips
-  // to EXPIRED visually even before a refetch.
-  const [tick, setTick] = useState(0);
+  // `now` is a real timestamp (ms), re-synced every 30s so the "Expires in"
+  // countdown stays fresh and PENDING flips to EXPIRED visually. It's only ever
+  // set inside the effect (never during render) so react-hooks/purity stays
+  // happy; it starts at 0 so the server + first client render match (no
+  // hydration mismatch), then the effect syncs it immediately after mount.
+  const [now, setNow] = useState(0); // 0 = not yet synced on the client
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 30 * 1000);
-    return () => clearInterval(id);
+    // Sync immediately via a 0ms timer (deferred, so it isn't a synchronous
+    // setState in the effect body) and then every 30s.
+    const sync = () => setNow(Date.now());
+    const initial = setTimeout(sync, 0);
+    const id = setInterval(sync, 30 * 1000);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(id);
+    };
   }, []);
 
   async function generate() {
@@ -77,7 +87,7 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
-        <ActiveTokenCard token={active} now={tick} />
+        <ActiveTokenCard token={active} now={now} />
 
         <Card>
           <CardHeader>
@@ -149,18 +159,19 @@ function ActiveTokenCard({ token, now }: { token: TokenView | null; now: number 
     ? `${window.location.origin}/intake/${token.token}`
     : `/intake/${token.token}`;
 
-  // Use the `now` snapshot the parent passed in — it's already a state
-  // value (refreshed on a tick), so we don't need to call Date.now() in
-  // render here.
-  const ms = new Date(token.expiresAt).getTime() - now;
-  const minsLeft = Math.max(0, Math.floor(ms / 60_000));
+  // `now` is a ms timestamp synced by the parent (0 until the first client
+  // tick). While unsynced, show "…" rather than a bogus value.
+  const minsLeft =
+    now === 0
+      ? null
+      : Math.max(0, Math.floor((new Date(token.expiresAt).getTime() - now) / 60_000));
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Patient scans this</CardTitle>
-        <Badge variant={minsLeft > 5 ? "info" : "warning"}>
-          {minsLeft === 0 ? "expired" : `${minsLeft} min left`}
+        <Badge variant={minsLeft != null && minsLeft > 5 ? "info" : "warning"}>
+          {minsLeft === null ? "…" : minsLeft === 0 ? "expired" : `${minsLeft} min left`}
         </Badge>
       </CardHeader>
       <CardContent className="flex flex-col items-center gap-4 pb-6">

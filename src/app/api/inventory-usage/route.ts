@@ -108,27 +108,43 @@ export async function POST(req: Request) {
 
   const meta = requestMeta(req);
 
-  // Apply: decrement + log + audit, all in one transaction.
+  // Apply: conditional decrement (atomic — can't oversell under concurrency)
+  // + log, in one transaction. The pre-flight above gives friendly errors in
+  // the common case; the `stock: { gte }` guard below catches the rare race
+  // where two sessions both pass pre-flight before either decrements.
   const logIds: string[] = [];
-  await prisma.$transaction(async (tx) => {
-    for (const it of f.items) {
-      await tx.inventoryItem.update({
-        where: { id: it.inventoryItemId },
-        data: { stock: { decrement: it.qty } },
-      });
-      const log = await tx.inventoryLog.create({
-        data: {
-          inventoryItemId: it.inventoryItemId,
-          action: "USED_IN_SESSION",
-          quantity: -it.qty,
-          notes: it.notes ?? null,
-          sessionId: f.sessionId ?? null,
-          performedById: auth.user.id,
-        },
-      });
-      logIds.push(log.id);
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const it of f.items) {
+        const dec = await tx.inventoryItem.updateMany({
+          where: { id: it.inventoryItemId, stock: { gte: it.qty } },
+          data: { stock: { decrement: it.qty } },
+        });
+        if (dec.count === 0) throw new Error(`INSUFFICIENT_STOCK:${it.inventoryItemId}`);
+        const log = await tx.inventoryLog.create({
+          data: {
+            inventoryItemId: it.inventoryItemId,
+            action: "USED_IN_SESSION",
+            quantity: -it.qty,
+            notes: it.notes ?? null,
+            sessionId: f.sessionId ?? null,
+            performedById: auth.user.id,
+          },
+        });
+        logIds.push(log.id);
+      }
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("INSUFFICIENT_STOCK:")) {
+      const id = e.message.slice("INSUFFICIENT_STOCK:".length);
+      const item = items.find((x) => x.id === id);
+      return NextResponse.json(
+        { error: "insufficient_stock", inventoryItemId: id, productName: item?.product.name },
+        { status: 409 },
+      );
     }
-  });
+    throw e;
+  }
 
   // Audit (outside the transaction — audit log row writes are idempotent
   // and we don't want a slow audit insert holding the inventory tx).

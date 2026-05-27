@@ -202,9 +202,17 @@ export async function POST(req: Request) {
         },
       });
 
-      // MIS snapshots — one per line item.
+      // MIS snapshots — one per line item. Allocate the invoice-level discount
+      // (additional + promo) by computeInvoiceTotals' ratio so MIS reconciles
+      // to the invoice total and the discount column reflects reality.
+      const misRound2 = (n: number) => Math.round(n * 100) / 100;
+      const misRatio = totals.subtotal > 0 ? totals.amountBeforeTax / totals.subtotal : 1;
       for (let i = 0; i < lineItems.length; i++) {
         const li = lineItems[i]!;
+        const gross = li.qty * li.perAmount;
+        const lineAfterAll = misRound2(gross * misRatio);
+        const lineGst = misRound2(lineAfterAll * li.gstRate);
+        const lineNet = misRound2(lineAfterAll + lineGst);
         await tx.misEntry.create({
           data: {
             invoiceId: invoice.id,
@@ -230,17 +238,17 @@ export async function POST(req: Request) {
                   : svcById.get(li.serviceId)?.serviceType === "HOME_VISIT"
                     ? "HomeVisit"
                     : "Clinic",
-            amount: li.qty * li.perAmount,
-            discount: 0,
-            amountBeforeTax: li.qty * li.perAmount,
+            amount: misRound2(gross),
+            discount: misRound2(gross - lineAfterAll),
+            amountBeforeTax: lineAfterAll,
             gstPercent: li.gstRate * 100,
-            gst: li.qty * li.perAmount * li.gstRate,
-            netPayableAmount: li.qty * li.perAmount * (1 + li.gstRate),
+            gst: lineGst,
+            netPayableAmount: lineNet,
             perSessionAmount: li.perAmount,
             noOfSessions: li.qty,
             sessionNo: 1,
             paidAmount: 0,
-            balanceAmount: li.qty * li.perAmount * (1 + li.gstRate),
+            balanceAmount: lineNet,
           },
         });
       }

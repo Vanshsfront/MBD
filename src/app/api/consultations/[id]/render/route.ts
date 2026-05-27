@@ -101,14 +101,20 @@ export async function GET(
 
   const url = new URL(req.url);
   if (url.searchParams.get("format") === "pdf") {
-    const pdf = await convertDocxToPdf(docxBuf);
-    return new NextResponse(new Uint8Array(pdf), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="consultation-${consultation.client.clientCode}-${consultation.id.slice(-6)}.pdf"`,
-      },
-    });
+    try {
+      const pdf = await convertDocxToPdf(docxBuf);
+      return new NextResponse(new Uint8Array(pdf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="consultation-${consultation.client.clientCode}-${consultation.id.slice(-6)}.pdf"`,
+        },
+      });
+    } catch (err) {
+      // LibreOffice missing/crashed/timed out — never 500; fall back to the
+      // editable DOCX so the clinician still gets the document.
+      console.error("[consultation render] PDF conversion failed; returning DOCX", err);
+    }
   }
 
   return new NextResponse(new Uint8Array(docxBuf), {

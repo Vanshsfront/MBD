@@ -215,11 +215,17 @@ export async function POST(req: Request) {
       },
     });
 
-    // MIS rows
+    // MIS rows. Allocate the invoice-level (additional + promo) discount across
+    // lines by the same ratio computeInvoiceTotals uses, so the MIS rows
+    // reconcile to the invoice total and the discount column reflects reality.
+    const misRound2 = (n: number) => Math.round(n * 100) / 100;
+    const misRatio = totals.subtotal > 0 ? totals.amountBeforeTax / totals.subtotal : 1;
     for (let i = 0; i < f.lineItems.length; i++) {
       const li = f.lineItems[i]!;
-      const amount = li.qty * li.perAmount * (1 - (li.lineDiscount ?? 0));
-      const gst = amount * li.gstRate;
+      const gross = li.qty * li.perAmount;
+      const netLine = gross * (1 - (li.lineDiscount ?? 0));
+      const lineAfterAll = misRound2(netLine * misRatio);
+      const gst = misRound2(lineAfterAll * li.gstRate);
       const consultantId = li.consultantId ?? auth.user.id;
       const consultantName =
         li.consultantName ??
@@ -244,17 +250,17 @@ export async function POST(req: Request) {
           consultant: consultantName,
           service: li.service ?? li.product ?? null,
           type: f.invoiceFlavor === "PRODUCTS" ? "Product" : "Clinic",
-          amount,
-          discount: 0,
-          amountBeforeTax: amount,
+          amount: misRound2(gross),
+          discount: misRound2(gross - lineAfterAll),
+          amountBeforeTax: lineAfterAll,
           gstPercent: li.gstRate * 100,
           gst,
-          netPayableAmount: amount + gst,
+          netPayableAmount: misRound2(lineAfterAll + gst),
           perSessionAmount: li.perAmount,
           noOfSessions: li.qty,
           sessionNo: 1,
           paidAmount: 0,
-          balanceAmount: amount + gst,
+          balanceAmount: misRound2(lineAfterAll + gst),
         },
       });
     }
