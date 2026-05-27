@@ -1,6 +1,14 @@
 // Color-coded client-flag badges (PRD §6 punchlist #8). Reused on the patient
 // list, detail header, assignment queue, calendar tooltips and invoices.
 
+import {
+  Star,
+  AlertTriangle,
+  Clock,
+  CalendarClock,
+  Tag,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface FlagLite {
@@ -33,6 +41,19 @@ function classFor(color: string | null): string {
   return COLOR_CLASS[(color ?? "amber").toLowerCase()] ?? COLOR_CLASS.amber;
 }
 
+// A small glyph per flag type so the kind reads at a glance, not just by color.
+const ICON_FOR: Record<string, LucideIcon> = {
+  VIP: Star,
+  CAUTION: AlertTriangle,
+  OVERDUE: Clock,
+  FOLLOWUP: CalendarClock,
+  CUSTOM: Tag,
+};
+
+function iconFor(type: string): LucideIcon {
+  return ICON_FOR[type?.toUpperCase()] ?? Tag;
+}
+
 export function FlagBadges({
   flags,
   max,
@@ -47,18 +68,22 @@ export function FlagBadges({
   const extra = max && flags.length > max ? flags.length - max : 0;
   return (
     <span className={cn("inline-flex flex-wrap items-center gap-1", className)}>
-      {shown.map((f, i) => (
-        <span
-          key={`${f.type}-${i}`}
-          title={f.type}
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset",
-            classFor(f.color),
-          )}
-        >
-          {f.label}
-        </span>
-      ))}
+      {shown.map((f, i) => {
+        const Icon = iconFor(f.type);
+        return (
+          <span
+            key={`${f.type}-${i}`}
+            title={f.type}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset",
+              classFor(f.color),
+            )}
+          >
+            <Icon className="h-3 w-3" aria-hidden />
+            {f.label}
+          </span>
+        );
+      })}
       {extra > 0 ? (
         <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-[color:var(--text-secondary)]">
           +{extra}
