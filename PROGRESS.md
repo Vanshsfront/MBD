@@ -1,5 +1,15 @@
 # MBD Clinic OS — Build Progress
 
+> **MERGED BUILD (2026-05-27).** OG adopted as the working app at the repo root
+> and reskinned in Clinic 2's design language, plus an org-hierarchy view + full
+> employee CRUD, per-role UX (multi-therapist primary selector, reschedule
+> validation, surfaced flags, Recent/All/Products invoice picker), the greeting
+> + silent-redirect bug fixes, baseline security hardening, and a fully
+> pre-completed demo patient. Phases A–H complete on branch `feat/merged-build`
+> (one commit per phase); 12 smokes + lint + build green on Windows. See
+> **`HANDOFF.md`** (credentials + demo walkthrough) and **`AUDIT_FINDINGS.md`**
+> (forensic record + hardening backlog). The OG history below is preserved.
+
 > **Status as of 2026-05-08: PRODUCTION HANDOFF**
 > Run `./scripts/run-all-smokes.sh` — 11 smokes + lint + build, ~71s. All green.
 > See `/reference-material/PRD.md` for the locked spec.

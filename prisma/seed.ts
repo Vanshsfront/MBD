@@ -418,8 +418,139 @@ async function main() {
     }
     console.log(`[seed] Promotions: ${PROMOTIONS.length}`);
 
-    // Sample data — only seed if no clients exist for this centre.
-    const existingClientCount = await prisma.client.count({ where: { centreId: centre.id } });
+    // ── Demo patient — a fully pre-completed happy-path so QA can verify every
+    // screen the moment they log in (PRD §8). Idempotent: created once, keyed
+    // on the COL-MBD-DEMO code.
+    const DEMO_CODE = "COL-MBD-DEMO";
+    if (!(await prisma.client.findUnique({ where: { clientCode: DEMO_CODE } }))) {
+      const physioDept = deptByName.get("Physiotherapy");
+      const massageDept = deptByName.get("Massage");
+      const physioSvc = physioDept
+        ? await prisma.service.findFirst({ where: { departmentId: physioDept.id, centreId: centre.id }, orderBy: { name: "asc" } })
+        : null;
+      const massageSvc = massageDept
+        ? await prisma.service.findFirst({ where: { departmentId: massageDept.id, centreId: centre.id }, orderBy: { name: "asc" } })
+        : null;
+      const physioTherapist =
+        staffRows.find((s) => s.departmentId === physioDept?.id && s.role === "THERAPIST") ??
+        staffRows.find((s) => s.departmentId === physioDept?.id);
+      const massageTherapist = staffRows.find((s) => s.departmentId === massageDept?.id);
+      const foStaff = staffByName.get("ramchandra bharankar") ?? staffRows.find((s) => s.role === "FRONT_OFFICE");
+      const ownerStaff = staffRows.find((s) => s.role === "OWNER");
+      const referral = await prisma.referralSource.findFirst({ orderBy: { sortOrder: "asc" } });
+
+      if (physioSvc && physioTherapist) {
+        const demoDob = new Date();
+        demoDob.setFullYear(demoDob.getFullYear() - 32);
+        const demo = await prisma.client.create({
+          data: {
+            clientCode: DEMO_CODE,
+            firstName: "Demo Patient",
+            lastName: "— Walk-Through",
+            email: "aanya.demo@example.com",
+            phone: "9800000000",
+            dob: demoDob, age: 32, sex: "F", dominance: "RIGHT", occupation: "Designer",
+            status: "ACTIVE", customerType: "WALK_IN", referralSourceId: referral?.id ?? null,
+            visitReasons: JSON.stringify(["Physiotherapy", "Massage"]),
+            address: JSON.stringify({ line1: "12 Marine Drive", city: "Mumbai", pincode: "400001" }),
+            emergencyContact: JSON.stringify({ name: "R. Sharma", phone: "9811111111", relationship: "Spouse" }),
+            consentFormPhotoUrl: "/demo/consent-sample.jpg",
+            centreId: centre.id,
+          },
+        });
+        await prisma.intakeForm.create({
+          data: {
+            clientId: demo.id,
+            selectedCategories: JSON.stringify(["Physiotherapy", "Massage"]),
+            consentSigned: true, liabilityWaiverSigned: true,
+            commercialTermsAccepted: true, cancellationPolicyAcknowledged: true,
+            consentMethod: "DIGITAL_PAD", frontOfficeExecId: foStaff?.id ?? null,
+          },
+        });
+        await prisma.clientDoctorAssignment.create({
+          data: { clientId: demo.id, staffId: physioTherapist.id, isPrimary: true, serviceId: physioSvc.id, serviceName: physioSvc.name },
+        });
+        if (massageTherapist) {
+          await prisma.clientDoctorAssignment.create({
+            data: { clientId: demo.id, staffId: massageTherapist.id, isPrimary: false, serviceId: massageSvc?.id ?? null, serviceName: massageSvc?.name ?? null },
+          });
+        }
+        const recJson = JSON.stringify([{ serviceId: physioSvc.id, serviceName: physioSvc.name, count: 8, perAmount: physioSvc.basePrice, gstRate: physioSvc.gstRate }]);
+        const consultation = await prisma.consultation.create({
+          data: {
+            templateKey: "physiotherapy", status: "COMPLETED", isLocked: true, lockedAt: new Date(),
+            clientId: demo.id, consultantId: physioTherapist.id, serviceId: physioSvc.id,
+            chiefComplaints: "Lower back pain, 3 weeks, worse on prolonged sitting.",
+            diagnosis: "Mechanical low back pain (lumbar facet).",
+            planOfCare: "Manual therapy + core stability programme, 8 sessions.",
+            recommendedSessions: 8, recommendedServicesJson: recJson,
+            formData: JSON.stringify({ vitals: { bp: "122/80", pulseBpm: "76" } }),
+          },
+        });
+        const perSession = physioSvc.basePrice || 1800;
+        const total = perSession * 8;
+        const validUntil = new Date();
+        validUntil.setDate(validUntil.getDate() + 90);
+        const pkg = await prisma.package.create({
+          data: {
+            clientId: demo.id, consultationId: consultation.id,
+            totalSessions: 8, completedSessions: 3,
+            serviceMix: JSON.stringify([{ serviceId: physioSvc.id, serviceName: physioSvc.name, count: 8 }]),
+            validFrom: new Date(), validUntil, status: "ACTIVE",
+            totalPrice: total, discountPercent: 0, discountAmount: 0,
+          },
+        });
+        for (let k = 0; k < 3; k++) {
+          const d = new Date();
+          d.setDate(d.getDate() - (12 - k * 5));
+          await prisma.session.create({
+            data: {
+              sessionDate: d, status: "COMPLETED",
+              clientId: demo.id, therapistId: physioTherapist.id, serviceId: physioSvc.id,
+              packageId: pkg.id, centreId: centre.id, perSessionAmount: perSession,
+              treatmentNotes: `Session ${k + 1}: manual therapy + prescribed exercises.`,
+            },
+          });
+        }
+        const gstRate = physioSvc.gstRate ?? 0;
+        const gst = total * gstRate;
+        const demoInvoice = await prisma.invoice.create({
+          data: {
+            invoiceNumber: "COL-MBD/0099/099-2026", invoiceType: "INVOICE", invoiceFlavor: "SERVICES",
+            subtotal: total, totalGst: gst, totalAmount: total + gst, paidAmount: total + gst, status: "PAID",
+            clientId: demo.id, packageId: pkg.id, centreId: centre.id,
+            lineItems: JSON.stringify([{ service: physioSvc.name, serviceId: physioSvc.id, hsnSac: physioSvc.hsnSacCode ?? "", qty: 8, perAmount: perSession, lineDiscount: 0, gstRate, lineTotal: total, consultantId: physioTherapist.id, consultantName: physioTherapist.name }]),
+          },
+        });
+        await prisma.payment.create({
+          data: { amount: total + gst, method: "UPI", invoiceId: demoInvoice.id, recordedById: foStaff?.id ?? null, reference: "DEMOUPI123" },
+        });
+        await prisma.misEntry.create({
+          data: {
+            invoiceId: demoInvoice.id, invoiceLineIndex: 0, clientId: demo.id, centreId: centre.id,
+            centreName: centre.name, invoiceNumber: demoInvoice.invoiceNumber, invoiceType: "INVOICE",
+            invoiceDate: new Date(), patientName: "Demo Patient — Walk-Through", patientType: "New",
+            customerType: "WALK_IN", referralSourceName: referral?.name ?? null,
+            consultantId: physioTherapist.id, consultant: physioTherapist.name,
+            service: physioSvc.name, department: "Physiotherapy", type: "Clinic",
+            amount: total, discount: 0, amountBeforeTax: total, gstPercent: gstRate * 100, gst,
+            netPayableAmount: total + gst, perSessionAmount: perSession, noOfSessions: 8, sessionNo: 1,
+            paidAmount: total + gst, balanceAmount: 0, modeOfPayment: "UPI",
+          },
+        });
+        await prisma.clientFlag.create({
+          data: { clientId: demo.id, type: "VIP", label: "Long-time client", color: "purple", notes: "Demo VIP flag.", createdById: ownerStaff?.id ?? null },
+        });
+        console.log("[seed] Demo patient created (COL-MBD-DEMO) — full happy-path.");
+      } else {
+        console.warn("[seed] Demo patient skipped — no physio service/therapist found.");
+      }
+    }
+
+    // Sample data — only seed if no (non-demo) clients exist for this centre.
+    const existingClientCount = await prisma.client.count({
+      where: { centreId: centre.id, clientCode: { not: DEMO_CODE } },
+    });
     if (existingClientCount > 0) {
       console.log(`[seed] sample data skipped (${existingClientCount} clients already exist)`);
       return;

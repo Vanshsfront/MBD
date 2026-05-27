@@ -11,31 +11,54 @@ Next.js 16 (App Router) · React 19 · TypeScript strict · Prisma 7 + Postgres
 · NextAuth v5 · Tailwind v4 · FullCalendar · docxtemplater + exceljs ·
 LibreOffice headless (DOCX→PDF) · node-cron.
 
-## Run locally
+> **Merged build.** This repo combines the proven OG backend/functionality with
+> the Clinic 2 design language, adds an org-hierarchy view + full employee CRUD,
+> richer per-role UX (multi-therapist assignment with a primary selector,
+> reschedule validation, surfaced client flags, a Recent/All/Products invoice
+> line picker), fixes the greeting + silent-redirect bugs, and applies baseline
+> security hardening. See `AUDIT_FINDINGS.md` for the full record and `HANDOFF.md`
+> for credentials + a demo walkthrough.
 
-Requires Postgres 14+ and `libreoffice --headless` on PATH.
+## Run locally (Windows or *nix)
+
+Requires **Node 20+**, **PostgreSQL 16**, and **LibreOffice** (for DOCX→PDF).
 
 ```bash
-# 1. Install + env
+# 1. Postgres (Docker example)
+docker run -d --name mbd-postgres -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mbd -p 5432:5432 postgres:16
+
+# 2. .env  (DATABASE_URL + DIRECT_URL + AUTH_SECRET + SOFFICE_BIN)
+#   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/mbd?schema=public"
+#   DIRECT_URL="postgresql://postgres:postgres@localhost:5432/mbd?schema=public"
+#   AUTH_SECRET="..."   # generate: npx auth secret
+#   SOFFICE_BIN="C:/Program Files/LibreOffice/program/soffice.exe"   # soffice path
+
+# 3. Install, generate, push, seed
 npm install
-# Set DATABASE_URL in .env (postgresql://user@host:5432/mbd_clinic_os)
+npx prisma generate
+npm run db:push
+npm run db:seed
 
-# 2. Push schema + seed
-npx prisma db push
-npx tsx prisma/seed.ts
-
-# 3. Dev server
+# 4. Dev server
 npm run dev
-# → http://localhost:3000  (login dev@mbd.in / mbd2026)
+# → http://localhost:3000   (login marazban@mbd.in / mbd2026 — see HANDOFF.md)
 ```
 
-Default seed: 1 Centre (`COL-MBD`), 7 Departments, ~48 Services, 13 Products,
-22 Staff, 30 sample Clients with packages/sessions/invoices/MIS rows.
+Seed: 1 Centre (`COL-MBD`), 7 Departments, ~45 Services, 13 Products, 22 Staff,
+30 sample Clients, **plus a fully pre-completed Demo Patient** (`COL-MBD-DEMO`,
+"Demo Patient — Walk-Through": intake + consent + 2 assignments + completed
+physio consultation w/ recommendations + 8-session package + 3 sessions + paid
+invoice + MIS row + VIP flag) so QA can verify every screen on login.
 
 ## Production-handoff gate
 
+Cross-platform runner — 12 smoke scripts + `lint` + `build` (Windows-friendly
+replacement for the legacy `run-all-smokes.sh`, which only exported `DATABASE_URL`):
+
 ```bash
-./scripts/run-all-smokes.sh
+node scripts/run-smokes.mjs            # full gate
+node scripts/run-smokes.mjs --no-gate  # smokes only
 ```
 
 Runs **11 smoke scripts + lint + build** in sequence; fails fast on first
