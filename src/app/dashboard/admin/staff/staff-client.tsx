@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, Pencil, Link2 } from "lucide-react";
+import { UserPlus, Pencil, Link2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AddStaffDialog,
@@ -68,6 +69,18 @@ export function StaffAdminView({
           />
         </CardHeader>
         <CardContent className="p-0">
+          {filtered.length === 0 ? (
+            <EmptyState
+              className="border-0"
+              icon={<Users className="h-8 w-8" />}
+              title={staff.length === 0 ? "No staff yet" : "No staff match your search"}
+              description={
+                staff.length === 0
+                  ? "Add your first team member with the Add staff button above."
+                  : "Try a different name, email, role, or department."
+              }
+            />
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -106,6 +119,7 @@ export function StaffAdminView({
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
 

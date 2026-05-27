@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -219,6 +221,14 @@ export function PromotionsAdminView({ promos }: { promos: PromoRow[] }) {
           <CardTitle>Existing promotions ({promos.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {promos.length === 0 ? (
+            <EmptyState
+              className="border-0"
+              icon={<Ticket className="h-8 w-8" />}
+              title="No promotions yet"
+              description="Create a promo code above to offer discounts at billing."
+            />
+          ) : (
           <ul className="divide-y">
             {promos.map((p) => (
               <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-3">
@@ -245,6 +255,7 @@ export function PromotionsAdminView({ promos }: { promos: PromoRow[] }) {
               </li>
             ))}
           </ul>
+          )}
         </CardContent>
       </Card>
     </div>

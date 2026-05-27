@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -124,6 +126,14 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
           <CardTitle>Existing centres ({centres.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {centres.length === 0 ? (
+            <EmptyState
+              className="border-0"
+              icon={<Building2 className="h-8 w-8" />}
+              title="No centres yet"
+              description="Add your first clinic below to start onboarding patients."
+            />
+          ) : (
           <ul className="divide-y">
             {centres.map((c) => (
               <li key={c.id} className="px-6 py-3">
@@ -147,6 +157,7 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
               </li>
             ))}
           </ul>
+          )}
         </CardContent>
       </Card>
 
