@@ -9,9 +9,10 @@
 // Manual flavor: free-entry consultant + HSN + rate + qty + GST.
 // Proforma: same shape as Services but invoiceType=PROFORMA + validTill date.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { Clock, LayoutList, Box, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -98,10 +99,39 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
   const [lines, setLines] = useState<LineItem[]>([blankLine()]);
   const [pending, setPending] = useState(false);
 
+  // Line-item picker (punchlist #5): Recent (this patient) / All services / Products + search.
+  // Keyed by patient so a stale fetch never shows the wrong patient's recents
+  // (and so the effect never calls setState synchronously).
+  const [recent, setRecent] = useState<{ forClient: string; services: ServiceOption[] }>({
+    forClient: "",
+    services: [],
+  });
+  const [pickerTab, setPickerTab] = useState<"recent" | "all" | "products">("recent");
+  const [pickerQuery, setPickerQuery] = useState("");
+
+  // Pull this patient's recently delivered/recommended services for the Recent tab.
+  useEffect(() => {
+    if (!clientId) return;
+    let cancelled = false;
+    fetch(`/api/clients/${clientId}/recent-services`)
+      .then((r) => (r.ok ? r.json() : { services: [] }))
+      .then((d: { services?: ServiceOption[] }) => {
+        if (!cancelled) setRecent({ forClient: clientId, services: d.services ?? [] });
+      })
+      .catch(() => {
+        if (!cancelled) setRecent({ forClient: clientId, services: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
   // Reset lines when flavor changes — fields differ.
   function switchFlavor(next: Flavor) {
     setFlavor(next);
     setLines([blankLine()]);
+    setPickerTab(next === "PRODUCTS" ? "products" : "recent");
+    setPickerQuery("");
     if (next !== "PROFORMA") setValidTill("");
   }
 
@@ -114,6 +144,62 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
   function addLine() {
     setLines((prev) => [...prev, blankLine()]);
   }
+
+  // ── Quick-add picker helpers ────────────────────────────────────────────
+  function isLineEmpty(l: LineItem) {
+    return !l.serviceId && !l.productId && !l.service && l.perAmount === 0;
+  }
+  function appendOrReplace(line: LineItem) {
+    // If the only line is still blank, fill it; otherwise append a new line.
+    setLines((prev) => (prev.length === 1 && isLineEmpty(prev[0]) ? [line] : [...prev, line]));
+  }
+  function addServiceLine(svc: ServiceOption) {
+    appendOrReplace({
+      serviceId: svc.id,
+      service: svc.name,
+      hsnSac: svc.hsnSac,
+      perAmount: svc.basePrice,
+      gstRate: svc.gstRate,
+      qty: svc.participantCount,
+      qtyLocked: svc.participantCount > 1 ? svc.participantCount : undefined,
+    });
+    toast.success(`Added ${svc.name}`);
+  }
+  function addProductLine(pr: ProductOption) {
+    appendOrReplace({
+      productId: pr.productId,
+      product: pr.name,
+      hsnSac: pr.hsnSac,
+      perAmount: pr.sellingPrice,
+      gstRate: pr.gstRate,
+      qty: 1,
+    });
+    toast.success(`Added ${pr.name}`);
+  }
+
+  // Services grouped by department for the "All services" tab.
+  const servicesByDept = useMemo(() => {
+    const q = pickerQuery.trim().toLowerCase();
+    const groups = new Map<string, ServiceOption[]>();
+    for (const s of services) {
+      if (q && !s.name.toLowerCase().includes(q) && !(s.department ?? "").toLowerCase().includes(q)) continue;
+      const dept = s.department ?? "Other";
+      if (!groups.has(dept)) groups.set(dept, []);
+      groups.get(dept)!.push(s);
+    }
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [services, pickerQuery]);
+
+  const recentFiltered = useMemo(() => {
+    const list = recent.forClient === clientId ? recent.services : [];
+    const q = pickerQuery.trim().toLowerCase();
+    return q ? list.filter((s) => s.name.toLowerCase().includes(q)) : list;
+  }, [recent, clientId, pickerQuery]);
+
+  const productsFiltered = useMemo(() => {
+    const q = pickerQuery.trim().toLowerCase();
+    return q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
+  }, [products, pickerQuery]);
 
   function pickService(idx: number, serviceId: string) {
     const svc = services.find((s) => s.id === serviceId);
@@ -321,6 +407,63 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
               </div>
             ) : null}
           </div>
+
+          {/* Quick-add picker (punchlist #5): Recent / All services / Products + search */}
+          {flavor !== "MANUAL" ? (
+            <div className="space-y-3 rounded-lg border border-[color:var(--border-light)] bg-muted/30 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex gap-1">
+                  {flavor === "PRODUCTS" ? (
+                    <PickerTab active={pickerTab === "products"} onClick={() => setPickerTab("products")} icon={<Box className="h-3.5 w-3.5" />} label="Products" />
+                  ) : (
+                    <>
+                      <PickerTab active={pickerTab === "recent"} onClick={() => setPickerTab("recent")} icon={<Clock className="h-3.5 w-3.5" />} label="Recent" />
+                      <PickerTab active={pickerTab === "all"} onClick={() => setPickerTab("all")} icon={<LayoutList className="h-3.5 w-3.5" />} label="All services" />
+                    </>
+                  )}
+                </div>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={pickerQuery}
+                    onChange={(e) => setPickerQuery(e.target.value)}
+                    placeholder="Search…"
+                    className="h-8 w-48 pl-7"
+                  />
+                </div>
+              </div>
+              <div className="max-h-56 space-y-1 overflow-y-auto custom-scrollbar">
+                {flavor !== "PRODUCTS" && pickerTab === "recent" ? (
+                  !clientId ? (
+                    <PickerHint text="Select a patient to see their recent services." />
+                  ) : recentFiltered.length === 0 ? (
+                    <PickerHint text="No recent services for this patient yet — use All services." />
+                  ) : (
+                    recentFiltered.map((s) => <ServicePickRow key={s.id} svc={s} onAdd={() => addServiceLine(s)} />)
+                  )
+                ) : null}
+                {flavor !== "PRODUCTS" && pickerTab === "all" ? (
+                  servicesByDept.length === 0 ? (
+                    <PickerHint text="No services match your search." />
+                  ) : (
+                    servicesByDept.map(([dept, items]) => (
+                      <div key={dept} className="space-y-1">
+                        <p className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{dept}</p>
+                        {items.map((s) => <ServicePickRow key={s.id} svc={s} onAdd={() => addServiceLine(s)} />)}
+                      </div>
+                    ))
+                  )
+                ) : null}
+                {flavor === "PRODUCTS" ? (
+                  productsFiltered.length === 0 ? (
+                    <PickerHint text="No in-stock products match your search." />
+                  ) : (
+                    productsFiltered.map((p) => <ProductPickRow key={p.productId} pr={p} onAdd={() => addProductLine(p)} />)
+                  )
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {/* Lines */}
           <div className="space-y-3">
@@ -555,5 +698,67 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+// ──────── Quick-add picker sub-components ────────
+
+function PickerTab({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+        active ? "bg-card text-[color:var(--text-primary)] shadow-[0_1px_2px_0_var(--shadow-color)]" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function PickerHint({ text }: { text: string }) {
+  return <p className="px-1 py-3 text-center text-xs text-muted-foreground">{text}</p>;
+}
+
+function ServicePickRow({ svc, onAdd }: { svc: ServiceOption; onAdd: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onAdd}
+      className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary"
+    >
+      <span className="min-w-0 flex-1 truncate">
+        {svc.name}
+        {svc.participantCount > 1 ? <span className="ml-1 text-[10px] text-muted-foreground">·{svc.participantCount === 2 ? "Duo" : "Trio"}</span> : null}
+      </span>
+      <span className="shrink-0 text-xs text-muted-foreground">{formatINR(svc.basePrice)}</span>
+      <span className="shrink-0 text-xs font-medium text-primary">+ Add</span>
+    </button>
+  );
+}
+
+function ProductPickRow({ pr, onAdd }: { pr: ProductOption; onAdd: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onAdd}
+      className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary"
+    >
+      <span className="min-w-0 flex-1 truncate">{pr.name}</span>
+      <span className="shrink-0 text-xs text-muted-foreground">{formatINR(pr.sellingPrice)} · {pr.stock} left</span>
+      <span className="shrink-0 text-xs font-medium text-primary">+ Add</span>
+    </button>
   );
 }
