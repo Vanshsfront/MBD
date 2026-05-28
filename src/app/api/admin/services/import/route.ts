@@ -41,6 +41,27 @@ export async function POST(req: Request) {
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: "file_too_large", maxBytes: MAX_BYTES }, { status: 413 });
   }
+  // Block files masquerading as XLSX. exceljs trips silently on bad input, but
+  // a hostile zip could still hit historic CVEs — reject at the door.
+  const XLSX_MIME =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const fileType = file.type || "";
+  const fileName = file.name?.toLowerCase() ?? "";
+  // Some browsers omit the MIME type for File objects, especially on Windows.
+  // Accept "" only if the extension is .xlsx — otherwise reject.
+  const looksLikeXlsx = fileName.endsWith(".xlsx");
+  if (fileType && fileType !== XLSX_MIME) {
+    return NextResponse.json(
+      { error: "unsupported_file_type", got: fileType, expected: XLSX_MIME },
+      { status: 415 },
+    );
+  }
+  if (!fileType && !looksLikeXlsx) {
+    return NextResponse.json(
+      { error: "unsupported_file_type", hint: "Upload a .xlsx file." },
+      { status: 415 },
+    );
+  }
 
   const arrayBuf = await file.arrayBuffer();
   const buf = Buffer.from(arrayBuf);

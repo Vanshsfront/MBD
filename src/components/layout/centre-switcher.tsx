@@ -1,10 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { readApiError } from "@/lib/error-messages";
+
+// Pathnames that include a centre-specific entity id and would 404 (or worse,
+// load another centre's data) if we just refreshed in place after a switch.
+// Matching is prefix-based on the SECOND path segment after /dashboard/.
+const CENTRE_SCOPED_DETAIL_PATTERNS: RegExp[] = [
+  /^\/dashboard\/patients\/[^/]+/, // patient detail + nested tabs
+  /^\/dashboard\/billing\/invoices\/[^/]+/, // invoice detail
+  /^\/dashboard\/admin\/products\/[^/]+/, // product detail
+];
+
+function isCentreScopedDetailPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return CENTRE_SCOPED_DETAIL_PATTERNS.some((re) => re.test(pathname));
+}
 
 interface CentreOption {
   id: string;
@@ -20,6 +34,7 @@ interface Props {
 
 export function CentreSwitcher({ centres, activeCentreId, defaultCentreId }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
 
@@ -40,7 +55,15 @@ export function CentreSwitcher({ centres, activeCentreId, defaultCentreId }: Pro
         );
       }
       setOpen(false);
-      router.refresh();
+      // If we were viewing a centre-specific detail page (an invoice, patient,
+      // product), that URL now points at data the new centre doesn't have —
+      // route back to /dashboard rather than leaving the user on a 404. For
+      // list/index pages, a refresh is enough.
+      if (isCentreScopedDetailPath(pathname)) {
+        router.replace("/dashboard");
+      } else {
+        router.refresh();
+      }
       toast.success(centreId ? "Centre switched" : "Reset to your home centre");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Switch failed");

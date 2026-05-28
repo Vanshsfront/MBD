@@ -47,6 +47,8 @@ const QUICK_ACTIONS: QuickAction[] = [
   { label: "Patient directory", hint: "patients", href: "/dashboard/patients", permission: "patients:view_assigned" },
   { label: "Invoices", hint: "billing", href: "/dashboard/billing/invoices", permission: "billing:view_invoices" },
   { label: "Payments", hint: "billing", href: "/dashboard/billing/payments", permission: "billing:view_payments" },
+  { label: "Packages", hint: "billing", href: "/dashboard/billing/packages", permission: "billing:view_packages" },
+  { label: "Sessions", hint: "clinical", href: "/dashboard/sessions", permission: "patients:view_assigned" },
   { label: "MIS dashboard", hint: "report", href: "/dashboard/reports/mis", permission: "reports:mis" },
   { label: "Audit log", hint: "admin", href: "/dashboard/admin/audit", permission: "admin:audit_log" },
   { label: "Profile / signature", hint: "settings", href: "/dashboard/settings/profile" },

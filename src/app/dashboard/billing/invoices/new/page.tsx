@@ -115,6 +115,9 @@ export default async function NewInvoicePage() {
         promotions={promotions.map((p) => ({
           code: p.code,
           label: `${p.name} (${p.discountType === "PERCENT" ? `${p.discountValue}%` : `₹${p.discountValue}`})`,
+          discountType: p.discountType as "PERCENT" | "FLAT",
+          discountValue: p.discountValue,
+          maxDiscount: p.maxDiscount ?? null,
         }))}
       />
     </div>

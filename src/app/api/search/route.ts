@@ -20,6 +20,11 @@ export async function GET(req: Request) {
 
   const centreId = await activeCentreId();
   const centreFilter = centreId ? { centreId } : {};
+  // Clinical roles (THERAPIST / CONSULTANT) per PRD §3.1:
+  //   - patients: only own active assignments
+  //   - invoices: not in their permissions at all — return []
+  //   - appointments: only ones they're the therapist on
+  // Do NOT loosen any of these without revising the permission matrix.
   const restrictToOwn = isClinicalRole(auth.user.role);
 
   const [patients, invoices, appointments] = await Promise.all([

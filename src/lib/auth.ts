@@ -40,6 +40,14 @@ const credentialsSchema = z.object({
   password: z.string().min(1),
 });
 
+/**
+ * bcrypt cost factor used for ALL new password writes (seed, admin-create,
+ * admin-reset, user self-change). bcrypt.compare reads the cost from the hash
+ * itself, so existing 10-cost hashes keep validating without re-hashing — new
+ * hashes just land stronger. 12 is the modern default.
+ */
+export const BCRYPT_COST = 12;
+
 function asRole(value: unknown): Role {
   if (typeof value !== "string") return "THERAPIST";
   return (ROLES as readonly string[]).includes(value)
@@ -49,7 +57,10 @@ function asRole(value: unknown): Role {
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
-  session: { strategy: "jwt" },
+  // 8h session — long enough for a clinical shift, short enough that an
+  // unattended kiosk doesn't stay logged in overnight. Default NextAuth was
+  // 30 days, which is wildly wrong for PHI.
+  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: { signIn: "/login" },
   providers: [
     Credentials({

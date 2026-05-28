@@ -53,7 +53,10 @@ export default async function PatientLayout({
 
   return (
     <div className="space-y-6">
-      <header className="space-y-3">
+      {/* Sticky patient header — name, status, code, and flags stay visible
+        * across all sub-tab scrolling. Z-index keeps it above the children's
+        * content; the cream gradient under the dashboard backs the blur. */}
+      <header className="sticky top-0 z-20 -mx-6 space-y-3 border-b border-[color:var(--border-light)] bg-card/90 px-6 pb-3 pt-4 backdrop-blur lg:-mx-10 lg:px-10">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">
             {client.firstName} {client.lastName}
@@ -64,7 +67,7 @@ export default async function PatientLayout({
           <span className="text-sm text-muted-foreground">{client.clientCode}</span>
           <FlagBadges flags={client.flags} />
         </div>
-        <nav className="flex flex-wrap gap-1 border-b">
+        <nav className="flex flex-wrap gap-1">
           {tabs.map((t) => (
             <Link
               key={t.href}

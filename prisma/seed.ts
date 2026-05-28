@@ -297,7 +297,9 @@ async function main() {
 
     // Staff (idempotent on email). Never seed the DEV super-account in
     // production (audit H-3) — it's a dev/testing convenience only.
-    const passwordHash = await hash(DEFAULT_PASSWORD, 10);
+    // Match BCRYPT_COST in src/lib/auth.ts. bcrypt.compare reads cost from
+    // the hash, so existing rows seeded at cost 10 still validate fine.
+    const passwordHash = await hash(DEFAULT_PASSWORD, 12);
     const roster =
       process.env.NODE_ENV === "production" ? ROSTER.filter((s) => s.role !== "DEV") : ROSTER;
     const staffRows = await Promise.all(

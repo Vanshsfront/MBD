@@ -8,7 +8,9 @@ import { createAuditLog, computeChanges } from "@/lib/audit";
 
 const updateSchema = z.object({
   id: z.string().min(1),
-  basePrice: z.number().min(0).optional(),
+  // basePrice in ₹. Hard cap at ₹1,000,000 — sanity, not policy. If a real
+  // service costs more, lift this. gstRate stays in fraction form (0..1).
+  basePrice: z.number().min(0).max(1_000_000).optional(),
   gstRate: z.number().min(0).max(1).optional(),
   isActive: z.boolean().optional(),
 });

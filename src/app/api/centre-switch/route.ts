@@ -44,7 +44,10 @@ export async function POST(req: Request) {
   }
 
   jar.set(CENTRE_COOKIE, centre.id, {
-    httpOnly: false, // readable client-side for the switcher button label
+    // The active centre is rendered into the switcher via SSR props by the
+    // dashboard shell, so the cookie never has to be JS-readable. Flipping
+    // httpOnly closes the XSS-tampering surface flagged in the audit.
+    httpOnly: true,
     sameSite: "lax",
     path: "/",
     maxAge: 30 * 24 * 60 * 60,

@@ -98,16 +98,27 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
         </div>
         <div className="flex items-end gap-2">
           <div className="space-y-1">
-            <label className="text-xs uppercase tracking-wide text-muted-foreground">
+            <label
+              className="text-xs uppercase tracking-wide text-muted-foreground"
+              htmlFor="intake-label"
+            >
               Label (optional)
             </label>
             <Input
+              id="intake-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. Walk-in — Ramesh, 3pm"
               className="w-56"
               maxLength={60}
+              aria-describedby="intake-label-counter"
             />
+            <p
+              id="intake-label-counter"
+              className="text-[10px] tabular-nums text-muted-foreground"
+            >
+              {label.length}/60
+            </p>
           </div>
           <Button onClick={generate} disabled={pending}>
             {pending ? "Generating…" : "Generate QR"}
@@ -217,7 +228,7 @@ function ActiveTokenCard({ token, now }: { token: TokenView | null; now: number 
       </CardHeader>
       <CardContent className="flex flex-col items-center gap-4 pb-6">
         <div className="rounded-lg border bg-white p-4">
-          <QRCodeSVG value={url} size={220} />
+          <QRCodeSVG value={url} size={280} />
         </div>
         <div className="w-full space-y-2">
           <p className="text-xs uppercase tracking-wider text-muted-foreground">Or share this link</p>

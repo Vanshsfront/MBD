@@ -61,6 +61,10 @@ interface StaffOption {
 interface PromoOption {
   code: string;
   label: string;
+  // Discount metadata so we can preview the saving inline before save.
+  discountType: "PERCENT" | "FLAT";
+  discountValue: number;
+  maxDiscount: number | null;
 }
 
 interface Props {
@@ -696,6 +700,31 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
                   ))}
                 </SelectContent>
               </Select>
+              {(() => {
+                if (!promoCode) return null;
+                const p = promotions.find((x) => x.code === promoCode);
+                if (!p) return null;
+                // Mirror src/lib/discount.ts: promo applies AFTER line +
+                // additional discount. We preview against the current
+                // afterDiscount total. PERCENT caps at maxDiscount when set.
+                const base = totals.afterDiscount;
+                const raw =
+                  p.discountType === "PERCENT"
+                    ? base * (p.discountValue / 100)
+                    : p.discountValue;
+                const promoDiscount =
+                  p.maxDiscount != null ? Math.min(raw, p.maxDiscount) : raw;
+                const capped =
+                  p.discountType === "PERCENT" &&
+                  p.maxDiscount != null &&
+                  raw > p.maxDiscount;
+                return (
+                  <p className="text-[11px] text-muted-foreground">
+                    Promo discount: <span className="font-medium text-emerald-700">−{formatINR(promoDiscount)}</span>
+                    {capped ? <span className="ml-1">(capped at {formatINR(p.maxDiscount!)})</span> : null}
+                  </p>
+                );
+              })()}
             </div>
           </div>
 

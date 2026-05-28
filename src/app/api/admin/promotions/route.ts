@@ -6,18 +6,30 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 
-const createSchema = z.object({
-  code: z.string().min(2).max(40).regex(/^[A-Z0-9_-]+$/i),
-  name: z.string().min(1).max(80),
-  description: z.string().max(300).optional(),
-  discountType: z.enum(["PERCENT", "FLAT"]),
-  discountValue: z.number().min(0),
-  maxDiscount: z.number().min(0).optional(),
-  validFrom: z.string().datetime().optional(),
-  validUntil: z.string().datetime().optional(),
-  maxUses: z.number().int().min(0).optional(),
-});
+const createSchema = z
+  .object({
+    code: z.string().min(2).max(40).regex(/^[A-Z0-9_-]+$/i),
+    name: z.string().min(1).max(80),
+    description: z.string().max(300).optional(),
+    discountType: z.enum(["PERCENT", "FLAT"]),
+    // PERCENT must be in [0,100]; FLAT can be any non-negative ₹ amount.
+    discountValue: z.number().min(0),
+    maxDiscount: z.number().min(0).optional(),
+    validFrom: z.string().datetime().optional(),
+    validUntil: z.string().datetime().optional(),
+    maxUses: z.number().int().min(0).optional(),
+  })
+  .refine(
+    (v) => v.discountType !== "PERCENT" || v.discountValue <= 100,
+    { message: "PERCENT promotions cannot exceed 100%.", path: ["discountValue"] },
+  )
+  .refine(
+    (v) => !v.validFrom || !v.validUntil || new Date(v.validFrom) <= new Date(v.validUntil),
+    { message: "validFrom must be on or before validUntil.", path: ["validUntil"] },
+  );
 
+// On update we don't see discountType, so PERCENT/FLAT validation happens
+// against the existing row below in the PATCH handler.
 const updateSchema = z.object({
   id: z.string().min(1),
   isActive: z.boolean().optional(),
@@ -88,6 +100,31 @@ export async function PATCH(req: Request) {
   const f = parsed.data;
   const existing = await prisma.promotion.findUnique({ where: { id: f.id } });
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  // Cross-field checks that need the existing row's discountType + validFrom.
+  if (
+    f.discountValue !== undefined &&
+    existing.discountType === "PERCENT" &&
+    f.discountValue > 100
+  ) {
+    return NextResponse.json(
+      { error: "validation_failed", message: "PERCENT promotions cannot exceed 100%." },
+      { status: 400 },
+    );
+  }
+  if (
+    f.validUntil &&
+    existing.validFrom &&
+    new Date(f.validUntil) < new Date(existing.validFrom)
+  ) {
+    return NextResponse.json(
+      {
+        error: "validation_failed",
+        message: "validUntil cannot be before this promotion's validFrom.",
+      },
+      { status: 400 },
+    );
+  }
 
   await prisma.promotion.update({
     where: { id: f.id },

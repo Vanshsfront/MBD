@@ -19,8 +19,10 @@ export default async function DefaultersReport({
   if (!hasPermission(session.user.role, "reports:view")) redirect("/dashboard");
 
   const sp = await searchParams;
-  const windowDays = Math.max(1, Number(sp.window ?? "30"));
-  const threshold = Math.max(1, Number(sp.threshold ?? "3"));
+  // Bound both params — an unbounded windowDays would scan years of
+  // appointments on a busy centre; threshold should stay sane.
+  const windowDays = clamp(Number(sp.window ?? "30"), 1, 365, 30);
+  const threshold = clamp(Number(sp.threshold ?? "3"), 1, 100, 3);
 
   const since = new Date();
   since.setDate(since.getDate() - windowDays);
@@ -123,6 +125,12 @@ export default async function DefaultersReport({
       </Card>
     </div>
   );
+}
+
+// Clamp a number coming from a URL param. NaN / Infinity / negative → fallback.
+function clamp(n: number, lo: number, hi: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(lo, Math.min(hi, Math.floor(n)));
 }
 
 function NumberInput({

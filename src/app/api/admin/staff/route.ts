@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog, computeChanges } from "@/lib/audit";
 import { activeCentreId } from "@/lib/centre";
+import { BCRYPT_COST } from "@/lib/auth";
 
 // Roles an admin may create/assign through this UI. OWNER is singular and DEV
 // is provisioned out-of-band (and gated to non-prod), so neither is creatable.
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
     data: {
       name: f.name,
       email: f.email,
-      passwordHash: await hash(f.password, 10),
+      passwordHash: await hash(f.password, BCRYPT_COST),
       role: f.role,
       departmentId: f.departmentId ?? null,
       centreId,
@@ -117,7 +118,7 @@ export async function PATCH(req: Request) {
   if (f.role !== undefined && existing.role !== "OWNER" && existing.role !== "DEV") {
     data.role = f.role;
   }
-  if (f.resetPassword) data.passwordHash = await hash(f.resetPassword, 10);
+  if (f.resetPassword) data.passwordHash = await hash(f.resetPassword, BCRYPT_COST);
 
   const updated = await prisma.staff.update({ where: { id: f.id }, data });
 

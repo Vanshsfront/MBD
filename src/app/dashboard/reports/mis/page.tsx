@@ -28,8 +28,23 @@ export default async function MisReportPage({
   const sp = await searchParams;
   const now = new Date();
   const fromDefault = new Date(now.getFullYear(), now.getMonth(), 1);
-  const from = sp.from ? new Date(sp.from) : fromDefault;
-  const to = sp.to ? new Date(sp.to) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const toDefault = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  // Validate URL params — a malformed ?from=garbage produces Invalid Date and
+  // silently returns nothing; an absurd range like ?from=1900 would scan the
+  // table. Both classes are bounded here.
+  const parsedFrom = sp.from ? new Date(sp.from) : fromDefault;
+  const parsedTo = sp.to ? new Date(sp.to) : toDefault;
+  const safeFrom = Number.isNaN(parsedFrom.getTime()) ? fromDefault : parsedFrom;
+  const safeTo = Number.isNaN(parsedTo.getTime()) ? toDefault : parsedTo;
+  // Cap the range at 3 years (covers FY-spanning audits without table scans).
+  const MAX_RANGE_DAYS = 3 * 366;
+  const rangeMs = safeTo.getTime() - safeFrom.getTime();
+  const cappedFrom =
+    rangeMs > MAX_RANGE_DAYS * 86_400_000
+      ? new Date(safeTo.getTime() - MAX_RANGE_DAYS * 86_400_000)
+      : safeFrom;
+  const from = cappedFrom;
+  const to = safeTo;
   const typeFilter = sp.type && sp.type !== "all" ? sp.type : null;
 
   // Honor the centre-switcher cookie (PRD §6.10) for OWNER/DEV; falls back to

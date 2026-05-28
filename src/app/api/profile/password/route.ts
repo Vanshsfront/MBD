@@ -6,6 +6,7 @@ import { compare, hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requestMeta } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
+import { BCRYPT_COST } from "@/lib/auth";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
 
   await prisma.staff.update({
     where: { id: staff.id },
-    data: { passwordHash: await hash(f.newPassword, 10) },
+    data: { passwordHash: await hash(f.newPassword, BCRYPT_COST) },
   });
 
   const meta = requestMeta(req);
