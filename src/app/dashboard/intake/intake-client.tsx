@@ -96,14 +96,16 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
             Generate a QR code for a walk-in patient to fill the intake form on their phone.
           </p>
         </div>
-        <div className="flex items-end gap-2">
-          <div className="space-y-1">
-            <label
-              className="text-xs uppercase tracking-wide text-muted-foreground"
-              htmlFor="intake-label"
-            >
-              Label (optional)
-            </label>
+        <div className="flex flex-col gap-1">
+          <label
+            className="text-xs uppercase tracking-wide text-muted-foreground"
+            htmlFor="intake-label"
+          >
+            Label (optional)
+          </label>
+          {/* Input and button share one row so their heights line up; the
+             character counter sits below the input without nudging them. */}
+          <div className="flex items-center gap-2">
             <Input
               id="intake-label"
               value={label}
@@ -113,16 +115,16 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
               maxLength={60}
               aria-describedby="intake-label-counter"
             />
-            <p
-              id="intake-label-counter"
-              className="text-[10px] tabular-nums text-muted-foreground"
-            >
-              {label.length}/60
-            </p>
+            <Button onClick={generate} disabled={pending}>
+              {pending ? "Generating…" : "Generate QR"}
+            </Button>
           </div>
-          <Button onClick={generate} disabled={pending}>
-            {pending ? "Generating…" : "Generate QR"}
-          </Button>
+          <p
+            id="intake-label-counter"
+            className="text-[10px] tabular-nums text-muted-foreground"
+          >
+            {label.length}/60
+          </p>
         </div>
       </header>
 

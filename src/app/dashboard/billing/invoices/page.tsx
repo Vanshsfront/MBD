@@ -12,6 +12,42 @@ import { activeCentreId } from "@/lib/centre";
 
 export const metadata = { title: "Invoices — MBD Clinic OS" };
 
+// Pull a human summary out of an invoice's lineItems JSON: the service/product
+// name (with "+N" when there are more lines) and the first consultant on it.
+function invoiceSummary(
+  lineItemsJson: string,
+  flavor: string,
+): { item: string; consultant: string | null } {
+  try {
+    const lines = JSON.parse(lineItemsJson) as Array<{
+      service?: string;
+      product?: string;
+      consultantName?: string;
+    }>;
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return { item: flavor, consultant: null };
+    }
+    const names = lines
+      .map((l) => l.service ?? l.product)
+      .filter((n): n is string => Boolean(n));
+    const consultant = lines.map((l) => l.consultantName).find(Boolean) ?? null;
+    const item =
+      names.length === 0
+        ? flavor
+        : names.length === 1
+          ? names[0]
+          : `${names[0]} +${names.length - 1}`;
+    return { item, consultant };
+  } catch {
+    return { item: flavor, consultant: null };
+  }
+}
+
+function formatInvoiceDate(d: Date | string): string {
+  const date = d instanceof Date ? d : new Date(d);
+  return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 export default async function InvoiceListPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -72,13 +108,22 @@ export default async function InvoiceListPage() {
                     href={`/dashboard/billing/invoices/${inv.id}`}
                     className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 transition-colors hover:bg-accent"
                   >
-                    <div>
-                      <p className="font-mono text-sm font-medium">{inv.invoiceNumber}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {inv.client.firstName} {inv.client.lastName} ({inv.client.clientCode}) ·{" "}
-                        {inv.invoiceFlavor}
-                      </p>
-                    </div>
+                    {(() => {
+                      const { item, consultant } = invoiceSummary(inv.lineItems, inv.invoiceFlavor);
+                      return (
+                        <div className="min-w-0">
+                          {/* Patient / therapist — service is the headline; the
+                             invoice number + date are secondary. */}
+                          <p className="text-sm font-semibold">
+                            {inv.client.firstName} {inv.client.lastName}
+                            {consultant ? ` / ${consultant}` : ""}
+                            {item ? <span className="font-normal text-muted-foreground"> — {item}</span> : null}
+                          </p>
+                          <p className="font-mono text-xs text-muted-foreground">{inv.invoiceNumber}</p>
+                          <p className="text-[11px] text-muted-foreground">{formatInvoiceDate(inv.createdAt)}</p>
+                        </div>
+                      );
+                    })()}
                     <div className="flex items-center gap-3">
                       <span className="tabular-nums">{formatINR(inv.totalAmount)}</span>
                       <Badge

@@ -11,26 +11,38 @@ import type {
   EventApi,
   EventChangeArg,
   EventClickArg,
+  EventContentArg,
+  EventMountArg,
 } from "@fullcalendar/core";
+import { Check, ChevronsUpDown, Search } from "lucide-react";
+import { Command } from "cmdk";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
+import { readableTextColor } from "@/lib/staff-colors";
+
+// How many therapist colours the legend shows before "Show all".
+const LEGEND_COLLAPSED_COUNT = 6;
 
 interface TherapistOption {
   id: string;
   name: string;
+  color: string;
   departmentId: string | null;
   department: string | null;
 }
@@ -45,7 +57,9 @@ interface ServiceOption {
 
 interface ClientOption {
   id: string;
-  label: string;
+  name: string;
+  clientCode: string;
+  phone: string;
   therapistIds: string[];
 }
 
@@ -57,7 +71,9 @@ interface AppointmentEvent {
   status: string;
   therapistId: string;
   therapistName: string;
+  therapistColor: string;
   clientId: string;
+  clientCode: string;
   serviceId: string;
   serviceName: string;
 }
@@ -66,6 +82,8 @@ interface Props {
   currentUserId: string;
   isClinicalRole: boolean;
   canBook: boolean;
+  /** False for Front Office — they book the slot, the therapist sets the service later. */
+  canAssignService: boolean;
   therapists: TherapistOption[];
   services: ServiceOption[];
   clients: ClientOption[];
@@ -75,6 +93,7 @@ export function CalendarClient({
   currentUserId,
   isClinicalRole,
   canBook,
+  canAssignService,
   therapists,
   services,
   clients,
@@ -85,13 +104,24 @@ export function CalendarClient({
   );
   const [creating, setCreating] = useState<{ start: string; end: string } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<AppointmentEvent | null>(null);
+  const [legendExpanded, setLegendExpanded] = useState(false);
 
   function fetchEvents(start: Date, end: Date) {
     const params = new URLSearchParams({ from: start.toISOString(), to: end.toISOString() });
     if (therapistFilter && !isClinicalRole) params.set("therapistId", therapistFilter);
     return fetch(`/api/appointments?${params.toString()}`)
       .then((r) => r.json())
-      .then((rows: AppointmentEvent[]) => rows);
+      .then((rows: AppointmentEvent[]) =>
+        // Colour each event by its therapist; a white border keeps adjacent
+        // (overlapping) events visually separated. Status is layered on via
+        // eventClassNames (cancelled = struck-through, completed = faded).
+        rows.map((r) => ({
+          ...r,
+          backgroundColor: r.therapistColor,
+          borderColor: "#ffffff",
+          textColor: readableTextColor(r.therapistColor),
+        })),
+      );
   }
 
   // Refresh on filter change.
@@ -136,7 +166,7 @@ export function CalendarClient({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Calendar</h1>
@@ -155,14 +185,17 @@ export function CalendarClient({
               value={therapistFilter === "" ? SELECT_NONE : therapistFilter}
               onValueChange={(v) => setTherapistFilter(v === SELECT_NONE ? "" : v)}
             >
-              <SelectTrigger id="therapist-filter" className="w-48">
+              <SelectTrigger id="therapist-filter" className="w-52">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={SELECT_NONE}>All</SelectItem>
+                <SelectItem value={SELECT_NONE}>All therapists</SelectItem>
                 {therapists.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.name}
+                    <span className="flex items-center gap-2">
+                      <ColorDot color={t.color} />
+                      {t.name}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -171,8 +204,32 @@ export function CalendarClient({
         ) : null}
       </header>
 
+      {/* Legend so the therapist→colour mapping is readable at a glance.
+         Collapsed to a handful by default — the full list is long. */}
+      {!isClinicalRole && therapists.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+          {(legendExpanded ? therapists : therapists.slice(0, LEGEND_COLLAPSED_COUNT)).map((t) => (
+            <span key={t.id} className="flex items-center gap-1.5">
+              <ColorDot color={t.color} />
+              {t.name}
+            </span>
+          ))}
+          {therapists.length > LEGEND_COLLAPSED_COUNT ? (
+            <button
+              type="button"
+              onClick={() => setLegendExpanded((v) => !v)}
+              className="font-medium text-primary hover:underline"
+            >
+              {legendExpanded
+                ? "Show less"
+                : `Show all (${therapists.length})`}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <Card>
-        <CardContent className="p-2">
+        <CardContent className="p-3 sm:p-4">
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
@@ -182,10 +239,14 @@ export function CalendarClient({
               center: "title",
               right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
             }}
+            height="auto"
             slotMinTime="07:00:00"
             slotMaxTime="22:00:00"
+            slotEventOverlap={false}
+            expandRows
             allDaySlot={false}
             nowIndicator
+            dayMaxEvents
             selectable={canBook}
             selectMirror
             editable={canBook}
@@ -199,16 +260,13 @@ export function CalendarClient({
             }}
             eventClassNames={(arg) => {
               const status = (arg.event.extendedProps.status as string) ?? "CONFIRMED";
-              if (status === "CANCELLED" || status === "NO_SHOW") return ["mbd-evt-cancelled"];
-              if (status === "COMPLETED") return ["mbd-evt-completed"];
-              return ["mbd-evt-confirmed"];
+              const base = ["mbd-evt"];
+              if (status === "CANCELLED" || status === "NO_SHOW") return [...base, "mbd-evt-cancelled"];
+              if (status === "COMPLETED") return [...base, "mbd-evt-completed"];
+              return base;
             }}
-            eventContent={(arg) => ({
-              html: `<div class="text-xs px-1 leading-tight">
-  <div class="font-medium truncate">${escapeHtml(arg.event.title)}</div>
-  <div class="opacity-80">${escapeHtml(arg.event.extendedProps.therapistName as string ?? "")}</div>
-</div>`,
-            })}
+            eventContent={renderEventContent}
+            eventDidMount={attachHoverTitle}
           />
         </CardContent>
       </Card>
@@ -219,6 +277,7 @@ export function CalendarClient({
         <CreateAppointmentDialog
           start={creating.start}
           end={creating.end}
+          canAssignService={canAssignService}
           therapists={therapists}
           services={services}
           clients={clients}
@@ -243,6 +302,43 @@ export function CalendarClient({
   );
 }
 
+function ColorDot({ color }: { color: string }) {
+  return (
+    <span
+      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/10"
+      style={{ backgroundColor: color }}
+    />
+  );
+}
+
+// Patient name (+ service) on the first line, therapist on the second. A ✓
+// marks completed appointments. IDs are intentionally not shown here — they
+// surface on hover (see attachHoverTitle).
+function renderEventContent(arg: EventContentArg) {
+  const status = (arg.event.extendedProps.status as string) ?? "CONFIRMED";
+  const therapistName = (arg.event.extendedProps.therapistName as string) ?? "";
+  const tick = status === "COMPLETED" ? "✓ " : "";
+  return {
+    html: `<div class="mbd-evt-body">
+  <div class="mbd-evt-title">${tick}${escapeHtml(arg.event.title)}</div>
+  <div class="mbd-evt-sub">${escapeHtml(therapistName)}</div>
+</div>`,
+  };
+}
+
+// Native tooltip on hover reveals the patient code (the "ID") plus context.
+function attachHoverTitle(arg: EventMountArg) {
+  const code = (arg.event.extendedProps.clientCode as string) ?? "";
+  const service = (arg.event.extendedProps.serviceName as string) || "Service TBD";
+  const therapist = (arg.event.extendedProps.therapistName as string) ?? "";
+  arg.el.setAttribute(
+    "title",
+    [arg.event.title, code && `ID: ${code}`, `Service: ${service}`, therapist && `Therapist: ${therapist}`]
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
 function eventToView(e: EventApi): AppointmentEvent {
   return {
     id: e.id,
@@ -252,7 +348,9 @@ function eventToView(e: EventApi): AppointmentEvent {
     status: (e.extendedProps.status as string) ?? "CONFIRMED",
     therapistId: (e.extendedProps.therapistId as string) ?? "",
     therapistName: (e.extendedProps.therapistName as string) ?? "",
+    therapistColor: (e.extendedProps.therapistColor as string) ?? "#2a7db8",
     clientId: (e.extendedProps.clientId as string) ?? "",
+    clientCode: (e.extendedProps.clientCode as string) ?? "",
     serviceId: (e.extendedProps.serviceId as string) ?? "",
     serviceName: (e.extendedProps.serviceName as string) ?? "",
   };
@@ -271,6 +369,9 @@ function CalendarStyles() {
         --fc-neutral-bg-color: var(--muted);
         font-family: var(--font-geist-sans), system-ui, sans-serif;
       }
+      .fc .fc-toolbar.fc-header-toolbar {
+        margin-bottom: 1rem;
+      }
       .fc .fc-button {
         background: var(--secondary);
         color: var(--secondary-foreground);
@@ -281,22 +382,57 @@ function CalendarStyles() {
         background: var(--primary);
         color: var(--primary-foreground);
       }
-      .mbd-evt-confirmed {
-        background: var(--primary);
-        border-color: var(--primary);
-        color: var(--primary-foreground);
+      /* Roomier time grid so events have breathing space. */
+      .fc .fc-timegrid-slot {
+        height: 2.6em;
       }
-      .mbd-evt-completed {
-        background: oklch(0.7 0.12 150);
-        border-color: oklch(0.65 0.12 150);
-        color: white;
+      .fc .fc-timegrid-axis-cushion,
+      .fc .fc-timegrid-slot-label-cushion {
+        font-size: 11px;
+        color: var(--text-tertiary);
       }
-      .mbd-evt-cancelled {
-        background: oklch(0.85 0.05 30);
-        border-color: oklch(0.78 0.07 30);
-        color: oklch(0.3 0.1 30);
-        opacity: 0.7;
+      /* Event card: rounded, padded, soft shadow, white separating border so
+         side-by-side (overlapping) events never blur together. */
+      .fc .mbd-evt {
+        border-radius: 7px;
+        border-width: 1.5px;
+        padding: 0;
+        box-shadow: 0 1px 3px rgba(26, 26, 30, 0.18);
+        overflow: hidden;
+      }
+      .fc .fc-timegrid-event {
+        margin-right: 1px;
+      }
+      .mbd-evt-body {
+        padding: 2px 5px;
+        line-height: 1.2;
+      }
+      .mbd-evt-title {
+        font-size: 11.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mbd-evt-sub {
+        font-size: 10.5px;
+        opacity: 0.85;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .fc .mbd-evt-completed {
+        opacity: 0.78;
+      }
+      .fc .mbd-evt-cancelled {
+        opacity: 0.5;
+      }
+      .fc .mbd-evt-cancelled .mbd-evt-title {
         text-decoration: line-through;
+      }
+      /* List view rows pick up the same therapist dot colour. */
+      .fc .fc-list-event-dot {
+        border-color: currentColor;
       }
     `}</style>
   );
@@ -305,6 +441,7 @@ function CalendarStyles() {
 function CreateAppointmentDialog({
   start,
   end,
+  canAssignService,
   therapists,
   services,
   clients,
@@ -312,6 +449,7 @@ function CreateAppointmentDialog({
 }: {
   start: string;
   end: string;
+  canAssignService: boolean;
   therapists: TherapistOption[];
   services: ServiceOption[];
   clients: ClientOption[];
@@ -322,12 +460,23 @@ function CreateAppointmentDialog({
   const [serviceId, setServiceId] = useState<string>("");
   const [pending, setPending] = useState(false);
 
-  const eligibleTherapists = useMemo(() => {
-    if (!clientId) return therapists;
-    const c = clients.find((x) => x.id === clientId);
-    if (!c || c.therapistIds.length === 0) return therapists;
-    const ranked = therapists.filter((t) => c.therapistIds.includes(t.id));
-    return ranked.length > 0 ? [...ranked, ...therapists.filter((t) => !ranked.includes(t))] : therapists;
+  // Therapists grouped by department, with the patient's already-assigned
+  // therapist(s) surfaced in an "Assigned" group at the top.
+  const therapistGroups = useMemo(() => {
+    const assignedIds = clientId
+      ? clients.find((c) => c.id === clientId)?.therapistIds ?? []
+      : [];
+    const assigned = therapists.filter((t) => assignedIds.includes(t.id));
+    const rest = therapists.filter((t) => !assignedIds.includes(t.id));
+    const byDept = new Map<string, TherapistOption[]>();
+    for (const t of rest) {
+      const key = t.department ?? "Other";
+      const list = byDept.get(key);
+      if (list) list.push(t);
+      else byDept.set(key, [t]);
+    }
+    const deptGroups = [...byDept.entries()].sort(([a], [b]) => a.localeCompare(b));
+    return { assigned, deptGroups };
   }, [clientId, clients, therapists]);
 
   const eligibleServices = useMemo(() => {
@@ -338,8 +487,12 @@ function CreateAppointmentDialog({
   }, [therapistId, services, therapists]);
 
   async function submit() {
-    if (!clientId || !therapistId || !serviceId) {
-      toast.error("Fill in all fields");
+    if (!clientId || !therapistId) {
+      toast.error("Pick a patient and a therapist");
+      return;
+    }
+    if (canAssignService && !serviceId) {
+      toast.error("Select a service");
       return;
     }
     setPending(true);
@@ -347,7 +500,13 @@ function CreateAppointmentDialog({
       const res = await fetch("/api/appointments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, therapistId, serviceId, startTime: start, endTime: end }),
+        body: JSON.stringify({
+          clientId,
+          therapistId,
+          serviceId: serviceId || undefined,
+          startTime: start,
+          endTime: end,
+        }),
       });
       if (!res.ok) {
         throw new Error(await readApiError(res, { fallback: "Couldn't book the appointment." }));
@@ -373,64 +532,87 @@ function CreateAppointmentDialog({
           <DialogTitle>Book appointment</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        {startDate.toLocaleString("en-IN", {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}{" "}
-        →{" "}
-        {endDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-      </p>
-      <div className="space-y-3">
-        <div className="space-y-1.5">
-          <Label>Patient</Label>
-          <Select value={clientId} onValueChange={setClientId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select…" />
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Therapist</Label>
-          <Select value={therapistId} onValueChange={setTherapistId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select…" />
-            </SelectTrigger>
-            <SelectContent>
-              {eligibleTherapists.map((t) => (
-                <SelectItem key={t.id} value={t.id}>
-                  {t.name} {t.department ? `· ${t.department}` : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Service</Label>
-          <Select value={serviceId} onValueChange={setServiceId} disabled={!therapistId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select…" />
-            </SelectTrigger>
-            <SelectContent>
-              {eligibleServices.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name} (₹{s.basePrice})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+          <p className="text-sm text-muted-foreground">
+            {startDate.toLocaleString("en-IN", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}{" "}
+            →{" "}
+            {endDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Patient</Label>
+              <PatientCombobox clients={clients} value={clientId} onChange={setClientId} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Therapist</Label>
+              {/* Changing therapist clears any service from the old department. */}
+              <Select
+                value={therapistId}
+                onValueChange={(v) => {
+                  setTherapistId(v);
+                  setServiceId("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {therapistGroups.assigned.length > 0 ? (
+                    <SelectGroup>
+                      <SelectLabel>Assigned</SelectLabel>
+                      {therapistGroups.assigned.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="flex items-center gap-2">
+                            <ColorDot color={t.color} />
+                            {t.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ) : null}
+                  {therapistGroups.deptGroups.map(([dept, list]) => (
+                    <SelectGroup key={dept}>
+                      <SelectLabel>{dept}</SelectLabel>
+                      {list.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="flex items-center gap-2">
+                            <ColorDot color={t.color} />
+                            {t.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {canAssignService ? (
+              <div className="space-y-1.5">
+                <Label>Service</Label>
+                <Select value={serviceId} onValueChange={setServiceId} disabled={!therapistId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eligibleServices.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} (₹{s.basePrice})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <p className="rounded-md border border-[color:var(--border-light)] bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                The assigned therapist will set the service for this appointment.
+              </p>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onClose(false)}>
@@ -442,6 +624,82 @@ function CreateAppointmentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Searchable patient picker. Shows names only; the patient code + phone are
+// searchable and surface on hover (title attribute) but never clutter the list.
+function PatientCombobox({
+  clients,
+  value,
+  onChange,
+}: {
+  clients: ClientOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = clients.find((c) => c.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-[color:var(--border)] bg-card px-3 py-1 text-sm shadow-[0_1px_2px_0_var(--shadow-color)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40"
+        >
+          <span className={selected ? "" : "text-[color:var(--text-tertiary)]"}>
+            {selected ? selected.name : "Search patient…"}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0"
+      >
+        <Command
+          filter={(value, search) =>
+            value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+          }
+        >
+          <div className="flex items-center gap-2 border-b border-[color:var(--border-light)] px-3">
+            <Search className="h-4 w-4 shrink-0 opacity-50" />
+            <Command.Input
+              placeholder="Search by name, ID or phone…"
+              autoFocus
+              className="flex h-10 w-full bg-transparent text-sm outline-none placeholder:text-[color:var(--text-tertiary)]"
+            />
+          </div>
+          <Command.List
+            className="overflow-y-auto overscroll-contain p-1"
+            style={{ maxHeight: 256 }}
+          >
+            <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">
+              No patient found.
+            </Command.Empty>
+            {clients.map((c) => (
+              <Command.Item
+                key={c.id}
+                // Searchable on name + code + phone; only the name renders.
+                value={`${c.name} ${c.clientCode} ${c.phone}`}
+                title={`${c.name} · ${c.clientCode}`}
+                onSelect={() => {
+                  onChange(c.id);
+                  setOpen(false);
+                }}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none aria-selected:bg-secondary"
+              >
+                <Check
+                  className={`h-4 w-4 shrink-0 ${value === c.id ? "opacity-100" : "opacity-0"}`}
+                />
+                <span className="truncate">{c.name}</span>
+              </Command.Item>
+            ))}
+          </Command.List>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -487,62 +745,71 @@ function EventDetailDialog({
     <Dialog open onOpenChange={(v) => !v && onClose(false)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="truncate">{event.title}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2 pr-6">
+            <ColorDot color={event.therapistColor} />
+            <span className="min-w-0 flex-1 truncate">{event.title}</span>
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-      <div className="space-y-1 text-sm">
-        <p>
-          <span className="text-muted-foreground">Therapist:</span> {event.therapistName}
-        </p>
-        <p>
-          <span className="text-muted-foreground">Service:</span> {event.serviceName}
-        </p>
-        <p>
-          <span className="text-muted-foreground">Time:</span>{" "}
-          {new Date(event.start).toLocaleString("en-IN", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}{" "}
-          →{" "}
-          {new Date(event.end).toLocaleTimeString("en-IN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </p>
-        <p>
-          <span className="text-muted-foreground">Status:</span> {event.status}
-        </p>
-      </div>
-      {canEdit && event.status !== "CANCELLED" ? (
-        <div className="space-y-3 rounded-md border p-3">
-          <p className="text-sm font-semibold">Cancel</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Cancelled by</Label>
-              <Select
-                value={cancelledBy}
-                onValueChange={(v) => setCancelledBy(v as typeof cancelledBy)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PATIENT">Patient</SelectItem>
-                  <SelectItem value="THERAPIST">Therapist</SelectItem>
-                  <SelectItem value="CLINIC">Clinic</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Reason</Label>
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional" />
-            </div>
+          <div className="space-y-1 text-sm">
+            {event.clientCode ? (
+              <p>
+                <span className="text-muted-foreground">Patient ID:</span> {event.clientCode}
+              </p>
+            ) : null}
+            <p>
+              <span className="text-muted-foreground">Therapist:</span> {event.therapistName}
+            </p>
+            <p>
+              <span className="text-muted-foreground">Service:</span>{" "}
+              {event.serviceName || "Service TBD"}
+            </p>
+            <p>
+              <span className="text-muted-foreground">Time:</span>{" "}
+              {new Date(event.start).toLocaleString("en-IN", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}{" "}
+              →{" "}
+              {new Date(event.end).toLocaleTimeString("en-IN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+            <p>
+              <span className="text-muted-foreground">Status:</span> {event.status}
+            </p>
           </div>
-        </div>
-      ) : null}
+          {canEdit && event.status !== "CANCELLED" ? (
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-sm font-semibold">Cancel</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Cancelled by</Label>
+                  <Select
+                    value={cancelledBy}
+                    onValueChange={(v) => setCancelledBy(v as typeof cancelledBy)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PATIENT">Patient</SelectItem>
+                      <SelectItem value="THERAPIST">Therapist</SelectItem>
+                      <SelectItem value="CLINIC">Clinic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Reason</Label>
+                  <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional" />
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onClose(false)}>

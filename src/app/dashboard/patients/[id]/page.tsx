@@ -223,7 +223,7 @@ export default async function PatientOverview({
               {client.appointments.map((a) => (
                 <li key={a.id} className="flex justify-between py-2">
                   <span>
-                    {a.service.name}
+                    {a.service?.name ?? "Service TBD"}
                     <span className="text-muted-foreground"> · {a.therapist.name}</span>
                   </span>
                   <span className="text-xs text-muted-foreground">

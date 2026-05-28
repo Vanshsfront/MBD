@@ -109,7 +109,7 @@ export async function GET(
           startIso: nextAppointment.startTime.toISOString(),
           endIso: nextAppointment.endTime.toISOString(),
           therapist: nextAppointment.therapist.name,
-          service: nextAppointment.service.name,
+          service: nextAppointment.service?.name ?? "To be confirmed",
         }
       : null,
     invoices: invoices.map((inv) => ({

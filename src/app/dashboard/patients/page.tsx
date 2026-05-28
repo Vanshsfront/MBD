@@ -44,10 +44,6 @@ export default async function PatientsPage() {
     },
     orderBy: [{ status: "asc" }, { firstName: "asc" }],
     include: {
-      doctorAssignments: {
-        where: { endedAt: null },
-        include: { staff: { select: { name: true } } },
-      },
       flags: { where: { isActive: true }, select: { type: true, label: true, color: true } },
       // Surface next upcoming and most-recent past appointment so the row
       // shows a "Next: ..." or "Last: ..." hint. We only need a small slice
@@ -126,23 +122,23 @@ export default async function PatientsPage() {
                 <li key={c.id}>
                   <Link
                     href={`/dashboard/patients/${c.id}`}
-                    className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 transition-colors hover:bg-accent"
+                    className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 transition-colors hover:bg-accent"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">
+                        <p className="text-sm font-semibold">
                           {c.firstName} {c.lastName}
                         </p>
                         <FlagBadges flags={c.flags} max={4} />
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {c.clientCode} · {c.phone}
-                        {c.age != null ? ` · ${c.age}${c.sex ?? ""}` : ""}
-                        {c.doctorAssignments.length > 0
-                          ? ` · ${c.doctorAssignments.map((a) => a.staff?.name).filter(Boolean).join(", ")}`
-                          : ""}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
+                      {/* Phone · age · gender as discrete, evenly spaced fields.
+                         Gender is colour-coded: M blue, F pink. */}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                        {c.phone ? <span>{c.phone}</span> : null}
+                        {c.age != null ? <span>{c.age} yrs</span> : null}
+                        {c.sex ? <span className={sexColor(c.sex)}>{c.sex}</span> : null}
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
                         Registered {formatRegisteredOn(c.createdAt)}
                       </p>
                     </div>
@@ -150,6 +146,9 @@ export default async function PatientsPage() {
                       <Badge variant={c.status === "ACTIVE" ? "success" : "default"}>
                         {c.status}
                       </Badge>
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        {c.clientCode}
+                      </span>
                       {next ? (
                         <span className="text-[11px] font-medium text-emerald-700">
                           Next: {formatApptDate(next.startTime)}
@@ -173,6 +172,14 @@ export default async function PatientsPage() {
       </Card>
     </div>
   );
+}
+
+// Gender colour cue: M → blue, F → pink, anything else stays muted.
+function sexColor(sex: string): string {
+  const s = sex.trim().toUpperCase();
+  if (s === "M") return "font-medium text-blue-600";
+  if (s === "F") return "font-medium text-pink-600";
+  return "";
 }
 
 function formatRegisteredOn(d: Date | string): string {

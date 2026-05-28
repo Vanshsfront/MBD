@@ -16,6 +16,7 @@ import {
   type StaffLite,
   type DepartmentLite,
 } from "@/components/admin/staff-dialogs";
+import { staffColor } from "@/lib/staff-colors";
 
 export function StaffAdminView({
   staff,
@@ -95,11 +96,20 @@ export function StaffAdminView({
               {filtered.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    <p className="text-sm font-medium text-[color:var(--text-primary)]">{s.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {s.email}
-                      {s.designation ? ` · ${s.designation}` : ""}
-                    </p>
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className="mt-0.5 h-3 w-3 shrink-0 rounded-full ring-1 ring-black/10"
+                        style={{ backgroundColor: staffColor(s.id, s.color) }}
+                        title={s.color ? `Calendar colour ${s.color}` : "Calendar colour (auto)"}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-[color:var(--text-primary)]">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {s.email}
+                          {s.designation ? ` · ${s.designation}` : ""}
+                        </p>
+                      </div>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">{ROLE_DISPLAY[s.role] ?? s.role}</Badge>

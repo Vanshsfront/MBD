@@ -85,7 +85,7 @@ export default async function NewChangeRequestPage() {
           endIso: a.endTime.toISOString(),
           clientName: `${a.client.firstName} ${a.client.lastName}`,
           clientCode: a.client.clientCode,
-          serviceName: a.service.name,
+          serviceName: a.service?.name ?? "Service TBD",
         }))}
         assignments={assignments.map((a) => ({
           id: a.id,

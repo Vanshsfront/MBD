@@ -110,7 +110,7 @@ export async function FrontOfficeDashboard({
                         {a.client.firstName} {a.client.lastName}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {a.service.name} · {a.therapist.name}
+                        {a.service?.name ?? "Service TBD"} · {a.therapist.name}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

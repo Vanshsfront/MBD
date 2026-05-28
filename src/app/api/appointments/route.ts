@@ -8,11 +8,14 @@ import { requirePermission, requireAuth, requestMeta } from "@/lib/api-auth";
 import { createAuditLog, computeChanges } from "@/lib/audit";
 import { isClinicalRole } from "@/lib/permissions";
 import { validateAppointmentTiming, ADJACENCY_WINDOW_MINUTES } from "@/lib/appointments";
+import { staffColor } from "@/lib/staff-colors";
 
 const createSchema = z.object({
   clientId: z.string().min(1),
   therapistId: z.string().min(1),
-  serviceId: z.string().min(1),
+  // Optional: Front Office books without a service; the therapist sets it
+  // later. Other roles supply it at booking time.
+  serviceId: z.string().min(1).optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   notes: z.string().max(500).optional(),
@@ -125,7 +128,7 @@ export async function POST(req: Request) {
     data: {
       clientId: f.clientId,
       therapistId: f.therapistId,
-      serviceId: f.serviceId,
+      serviceId: f.serviceId ?? null,
       centreId: client.centreId,
       startTime: start,
       endTime: end,
@@ -161,7 +164,7 @@ export async function POST(req: Request) {
       startTime: { old: null, new: start.toISOString() },
       endTime: { old: null, new: end.toISOString() },
     },
-    metadata: { clientId: f.clientId, therapistId: f.therapistId, serviceId: f.serviceId },
+    metadata: { clientId: f.clientId, therapistId: f.therapistId, serviceId: f.serviceId ?? null },
     ipAddress: meta.ipAddress,
     userAgent: meta.userAgent,
   });
@@ -277,8 +280,8 @@ export async function GET(req: Request) {
     },
     orderBy: { startTime: "asc" },
     include: {
-      client: { select: { id: true, firstName: true, lastName: true } },
-      therapist: { select: { id: true, name: true } },
+      client: { select: { id: true, firstName: true, lastName: true, clientCode: true } },
+      therapist: { select: { id: true, name: true, color: true } },
       service: { select: { id: true, name: true, basePrice: true, departmentId: true } },
     },
   });
@@ -286,15 +289,17 @@ export async function GET(req: Request) {
   return NextResponse.json(
     appointments.map((a) => ({
       id: a.id,
-      title: `${a.client.firstName} ${a.client.lastName} — ${a.service.name}`,
+      title: `${a.client.firstName} ${a.client.lastName} — ${a.service?.name ?? "Service TBD"}`,
       start: a.startTime.toISOString(),
       end: a.endTime.toISOString(),
       status: a.status,
       therapistId: a.therapist.id,
       therapistName: a.therapist.name,
+      therapistColor: staffColor(a.therapist.id, a.therapist.color),
       clientId: a.client.id,
-      serviceId: a.service.id,
-      serviceName: a.service.name,
+      clientCode: a.client.clientCode,
+      serviceId: a.service?.id ?? "",
+      serviceName: a.service?.name ?? "",
     })),
   );
 }
@@ -306,7 +311,7 @@ interface PrismaAppointment {
   status: string;
   clientId: string;
   therapistId: string;
-  serviceId: string;
+  serviceId: string | null;
 }
 
 function serialise(a: PrismaAppointment) {

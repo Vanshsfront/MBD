@@ -97,7 +97,7 @@ export async function TherapistDashboard({
                           {a.client.firstName} {a.client.lastName}{" "}
                           <span className="text-muted-foreground">({a.client.clientCode})</span>
                         </p>
-                        <p className="text-xs text-muted-foreground">{a.service.name}</p>
+                        <p className="text-xs text-muted-foreground">{a.service?.name ?? "Service TBD"}</p>
                       </div>
                       <span className="font-mono text-sm tabular-nums">
                         {a.startTime.toLocaleTimeString("en-IN", {
