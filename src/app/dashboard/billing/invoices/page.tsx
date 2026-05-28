@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
 import { activeCentreId } from "@/lib/centre";
 
@@ -50,7 +51,19 @@ export default async function InvoiceListPage() {
         </CardHeader>
         <CardContent className="p-0">
           {invoices.length === 0 ? (
-            <p className="p-6 text-sm text-muted-foreground">No invoices yet.</p>
+            <div className="p-6">
+              <EmptyState
+                title="No invoices yet"
+                description="Invoices appear here as you create them. Start with the button above."
+                action={
+                  canCreate ? (
+                    <Button asChild size="sm">
+                      <Link href="/dashboard/billing/invoices/new">+ New invoice</Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </div>
           ) : (
             <ul className="divide-y">
               {invoices.map((inv) => (

@@ -85,6 +85,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Audit log", href: "/dashboard/admin/audit", section: "admin", permission: "admin:audit_log", icon: "history" },
   { label: "Client flags", href: "/dashboard/admin/flags", section: "admin", permission: "admin:client_flags", icon: "flag" },
   { label: "Change requests", href: "/dashboard/admin/change-requests", section: "admin", permission: "appointments:review_change_request", icon: "bell" },
+  { label: "Attendance", href: "/dashboard/admin/attendance", section: "admin", permission: "admin:attendance", icon: "calendar" },
 
   // Settings (all roles)
   { label: "Profile", href: "/dashboard/settings/profile", section: "settings", permission: "dashboard:view", icon: "settings" },

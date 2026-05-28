@@ -40,10 +40,32 @@ export async function POST(req: Request) {
   if (invoice.status === "CANCELLED")
     return NextResponse.json({ error: "invoice_cancelled" }, { status: 400 });
 
+  // Block overpayment. Tolerance is 1 paisa for float rounding — anything
+  // beyond is rejected so the FO has to either reduce the amount or recognise
+  // an explicit "excess" via the existing MisEntry.excessAmount column in a
+  // separate flow. Silently swallowing real money has been the historical bug.
+  const outstanding = Math.max(0, invoice.totalAmount - invoice.paidAmount);
+  const OVERPAY_EPS = 0.01;
+  if (f.amount > outstanding + OVERPAY_EPS) {
+    return NextResponse.json(
+      {
+        error: "overpayment",
+        message: `Outstanding is ₹${outstanding.toFixed(2)}; amount ₹${f.amount.toFixed(2)} is more than that.`,
+        outstanding,
+        attempted: f.amount,
+      },
+      { status: 409 },
+    );
+  }
+
   const newPaid = invoice.paidAmount + f.amount;
   const remaining = Math.max(0, invoice.totalAmount - newPaid);
   const newStatus =
-    newPaid >= invoice.totalAmount ? "PAID" : newPaid > 0 ? "PARTIAL" : invoice.status;
+    newPaid >= invoice.totalAmount - OVERPAY_EPS
+      ? "PAID"
+      : newPaid > 0
+        ? "PARTIAL"
+        : invoice.status;
 
   const meta = requestMeta(req);
   const paidAt = f.paymentDateIso ? new Date(f.paymentDateIso) : new Date();

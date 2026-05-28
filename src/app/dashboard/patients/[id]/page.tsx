@@ -4,7 +4,9 @@ import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SharePortalButton } from "./share-portal-button";
+import { EditDemographicsDialog } from "./edit-demographics-dialog";
 
 export default async function PatientOverview({
   params,
@@ -53,8 +55,10 @@ export default async function PatientOverview({
     client.emergencyContact,
   );
 
-  // FO-side staff (anyone who can edit demographics) can share a portal link.
-  const canSharePortal = hasPermission(session.user.role, "patients:edit_demographics");
+  // FO-side staff (anyone who can edit demographics) can share a portal link
+  // and edit the patient's demographic fields.
+  const canEditDemographics = hasPermission(session.user.role, "patients:edit_demographics");
+  const canSharePortal = canEditDemographics;
 
   const intake = client.intakeForms[0] ?? null;
   const hasIntake = Boolean(intake);
@@ -115,8 +119,27 @@ export default async function PatientOverview({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle>Patient details</CardTitle>
+          {canEditDemographics ? (
+            <EditDemographicsDialog
+              client={{
+                id: client.id,
+                firstName: client.firstName,
+                lastName: client.lastName,
+                phone: client.phone,
+                email: client.email ?? null,
+                dob: client.dob ? client.dob.toISOString() : null,
+                age: client.age ?? null,
+                sex: client.sex ?? null,
+                occupation: client.occupation ?? null,
+                sport: client.sport ?? null,
+                maritalStatus: client.maritalStatus ?? null,
+                address: address ?? null,
+                emergencyContact: emergency ?? null,
+              }}
+            />
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
           <KV k="Phone" v={client.phone} />
@@ -220,7 +243,11 @@ export default async function PatientOverview({
           </CardHeader>
           <CardContent className="text-sm">
             {client.packages.length === 0 ? (
-              <p className="text-muted-foreground">No packages.</p>
+              <EmptyState
+                title="No packages"
+                description="Create one from a consultation's recommendations."
+                className="border-none p-6"
+              />
             ) : (
               <ul className="divide-y">
                 {client.packages.map((p) => (
@@ -244,7 +271,11 @@ export default async function PatientOverview({
           </CardHeader>
           <CardContent className="text-sm">
             {client.invoices.length === 0 ? (
-              <p className="text-muted-foreground">No invoices.</p>
+              <EmptyState
+                title="No invoices"
+                description="Invoices linked to this patient will appear here."
+                className="border-none p-6"
+              />
             ) : (
               <ul className="divide-y">
                 {client.invoices.map((inv) => (

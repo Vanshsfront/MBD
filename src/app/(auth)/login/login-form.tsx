@@ -101,12 +101,14 @@ export function LoginForm() {
             {pending ? "Signing in…" : "Sign in"}
           </Button>
 
-          <p className="text-center text-xs text-[color:var(--text-tertiary)]">
-            Default seed password:{" "}
-            <code className="rounded-md bg-secondary px-1.5 py-0.5 font-mono text-[11px]">
-              mbd2026
-            </code>
-          </p>
+          {process.env.NEXT_PUBLIC_SHOW_SEED_HINT === "true" ? (
+            <p className="text-center text-xs text-[color:var(--text-tertiary)]">
+              Default seed password:{" "}
+              <code className="rounded-md bg-secondary px-1.5 py-0.5 font-mono text-[11px]">
+                mbd2026
+              </code>
+            </p>
+          ) : null}
         </form>
       </CardContent>
     </Card>

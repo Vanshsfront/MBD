@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
 import { readApiError } from "@/lib/error-messages";
 
 interface TokenView {
@@ -123,7 +124,12 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
           </CardHeader>
           <CardContent className="p-0">
             {tokens.length === 0 ? (
-              <p className="p-6 text-sm text-muted-foreground">No intakes generated yet.</p>
+              <div className="p-6">
+                <EmptyState
+                  title="No intakes generated yet"
+                  description="Click Generate intake link to mint a QR code for the next walk-in."
+                />
+              </div>
             ) : (
               <ul className="divide-y">
                 {tokens.map((t) => (

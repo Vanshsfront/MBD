@@ -5,6 +5,7 @@ import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
 
 export const metadata = { title: "Payments — MBD Clinic OS" };
@@ -45,7 +46,12 @@ export default async function PaymentsPage() {
         </CardHeader>
         <CardContent className="p-0">
           {payments.length === 0 ? (
-            <p className="p-6 text-sm text-muted-foreground">No payments recorded yet.</p>
+            <div className="p-6">
+              <EmptyState
+                title="No payments yet"
+                description="Open an invoice and click Record payment to log one. Recent payments will appear here."
+              />
+            </div>
           ) : (
             <ul className="divide-y">
               {payments.map((p) => (

@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { groupNav, navItemsFor, SECTION_LABELS, type NavItem, type NavIcon } from "@/lib/nav";
+import { groupNav, navItemsFor, SECTION_LABELS } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -12,48 +11,20 @@ import { NotificationBell } from "@/components/layout/notification-bell";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { CentreSwitcher } from "@/components/layout/centre-switcher";
 import { SearchTrigger } from "@/components/layout/search-trigger";
+import { NavLink, type NavIconKey } from "@/components/layout/nav-link";
 import type { Role } from "@/lib/permissions";
-import {
-  LayoutDashboard, QrCode, UserPlus, Users, Calendar, Stethoscope, Receipt,
-  CreditCard, Package, BarChart3, List, AlertTriangle, Building2, UserCog,
-  Tag, History, Flag, Bell, Settings, Box, GitBranch, type LucideIcon,
-} from "lucide-react";
-
-const NAV_ICON: Record<NavIcon, LucideIcon> = {
-  dashboard: LayoutDashboard,
-  qr: QrCode,
-  "user-plus": UserPlus,
-  users: Users,
-  calendar: Calendar,
-  stethoscope: Stethoscope,
-  receipt: Receipt,
-  "credit-card": CreditCard,
-  package: Package,
-  chart: BarChart3,
-  list: List,
-  alert: AlertTriangle,
-  building: Building2,
-  "user-cog": UserCog,
-  tag: Tag,
-  history: History,
-  flag: Flag,
-  bell: Bell,
-  settings: Settings,
-  box: Box,
-  hierarchy: GitBranch,
-};
 
 // Dashboard shell — warm, neumorphic chrome matching the legacy codebase.
 // The whole shell sits on .bg-gradient-app so the warm cream gradient shows
 // in the gutters; the sidebar is a white surface with a hairline ring; the
-// active nav item is a soft dark pill. Logo badge mirrors the login screen.
+// active nav item is a soft dark pill (rendered by NavLink, which is a
+// client component so it follows client-side navigation correctly — see
+// nav-link.tsx for why this can't be derived from a server prop).
 
 export async function DashboardShell({
   children,
-  pathname,
 }: {
   children: React.ReactNode;
-  pathname: string;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -104,7 +75,12 @@ export async function DashboardShell({
                 </p>
                 <ul className="space-y-0.5">
                   {sectionItems.map((item) => (
-                    <NavLink key={item.href} item={item} pathname={pathname} />
+                    <NavLink
+                      key={item.href}
+                      href={item.href}
+                      label={item.label}
+                      icon={item.icon as NavIconKey | undefined}
+                    />
                   ))}
                 </ul>
               </div>
@@ -160,28 +136,5 @@ export async function DashboardShell({
 
       <CommandPalette role={role} />
     </div>
-  );
-}
-
-function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const isActive =
-    pathname === item.href || pathname.startsWith(`${item.href}/`);
-  const Icon = item.icon ? NAV_ICON[item.icon] : null;
-  return (
-    <li>
-      <Link
-        href={item.href}
-        className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
-          isActive
-            ? "bg-[color:var(--text-primary)] font-medium text-white shadow-[0_4px_12px_-6px_rgba(26,26,30,0.4)]"
-            : "text-[color:var(--text-secondary)] hover:bg-secondary hover:text-[color:var(--text-primary)]"
-        }`}
-      >
-        {Icon ? (
-          <Icon className={`h-4 w-4 shrink-0 ${isActive ? "opacity-100" : "opacity-70"}`} />
-        ) : null}
-        <span className="truncate">{item.label}</span>
-      </Link>
-    </li>
   );
 }

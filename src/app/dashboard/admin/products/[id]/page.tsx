@@ -9,6 +9,7 @@ import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
 
 export const metadata = { title: "Inventory item — MBD Clinic OS" };
@@ -110,9 +111,12 @@ export default async function InventoryItemDetailPage({
         </CardHeader>
         <CardContent className="p-0">
           {logs.length === 0 ? (
-            <p className="px-6 py-4 text-sm text-muted-foreground">
-              No movements recorded yet.
-            </p>
+            <div className="p-6">
+              <EmptyState
+                title="No movements yet"
+                description="Stock-in, sales, sessions and adjustments will be logged here as they happen."
+              />
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -175,9 +179,12 @@ export default async function InventoryItemDetailPage({
         </CardHeader>
         <CardContent className="p-0">
           {priceHistory.length === 0 ? (
-            <p className="px-6 py-4 text-sm text-muted-foreground">
-              No price changes yet.
-            </p>
+            <div className="p-6">
+              <EmptyState
+                title="No price changes yet"
+                description="Edit the supplier or pricing to start the history."
+              />
+            </div>
           ) : (
             <table className="w-full text-xs">
               <thead className="bg-muted/40 uppercase tracking-wide text-muted-foreground">

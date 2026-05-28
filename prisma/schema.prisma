@@ -51,6 +51,20 @@ model InvoiceCounter {
   @@unique([centreId, financialYear])
 }
 
+// ─── INVOICE MONTHLY COUNTER (atomic per-month branch counter) ─
+// The third path of {seq}/{branch}/{yyyy} in invoice numbers resets monthly.
+// Previously derived from count(*) — non-atomic, two concurrent FO creates in
+// the same month/centre could compute the same branchCounter and clash on
+// Invoice.invoiceNumber's @unique. This row guarantees per-month atomicity.
+model InvoiceMonthlyCounter {
+  id           String @id @default(cuid())
+  centreId     String
+  yearMonth    String // e.g. "2026-05"
+  lastSequence Int    @default(0)
+
+  @@unique([centreId, yearMonth])
+}
+
 // ─── CLIENT CODE COUNTER (atomic, race-safe per-centre client numbering) ─
 model ClientCodeCounter {
   id           String @id @default(cuid())

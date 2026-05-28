@@ -89,24 +89,62 @@ export async function POST(req: Request) {
     );
   }
 
-  const consultation = await prisma.consultation.create({
-    data: {
-      clientId: f.clientId,
-      consultantId: auth.user.id,
-      templateKey: f.templateKey,
-      formData: JSON.stringify(v.data),
-      chiefComplaints: f.chiefComplaints ?? null,
-      diagnosis: f.diagnosis ?? null,
-      planOfCare: f.planOfCare ?? null,
-      treatmentProtocol: f.treatmentProtocol ?? null,
-      recommendedSessions: f.recommendedSessions ?? null,
-      recommendedServicesJson: f.recommendedServices
-        ? JSON.stringify(f.recommendedServices)
-        : null,
-      followUp: f.followUp ?? null,
-      serviceId: f.serviceId ?? null,
-      status: f.status,
-    },
+  // Two-tab race guard: if this consultant already has an open DRAFT for the
+  // same client + template, update it instead of minting a parallel row. The
+  // Prisma schema can't express a partial unique (WHERE status='DRAFT') so the
+  // window is best-closed at the app layer with a transactional read-then-
+  // upsert. Saves a session from accidental "twin draft" rows when the user
+  // opens the same patient in two tabs.
+  const consultation = await prisma.$transaction(async (tx) => {
+    const existingDraft = await tx.consultation.findFirst({
+      where: {
+        clientId: f.clientId,
+        consultantId: auth.user.id,
+        templateKey: f.templateKey,
+        status: "DRAFT",
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existingDraft) {
+      return tx.consultation.update({
+        where: { id: existingDraft.id },
+        data: {
+          formData: JSON.stringify(v.data),
+          chiefComplaints: f.chiefComplaints ?? null,
+          diagnosis: f.diagnosis ?? null,
+          planOfCare: f.planOfCare ?? null,
+          treatmentProtocol: f.treatmentProtocol ?? null,
+          recommendedSessions: f.recommendedSessions ?? null,
+          recommendedServicesJson: f.recommendedServices
+            ? JSON.stringify(f.recommendedServices)
+            : null,
+          followUp: f.followUp ?? null,
+          serviceId: f.serviceId ?? null,
+          status: f.status,
+        },
+      });
+    }
+
+    return tx.consultation.create({
+      data: {
+        clientId: f.clientId,
+        consultantId: auth.user.id,
+        templateKey: f.templateKey,
+        formData: JSON.stringify(v.data),
+        chiefComplaints: f.chiefComplaints ?? null,
+        diagnosis: f.diagnosis ?? null,
+        planOfCare: f.planOfCare ?? null,
+        treatmentProtocol: f.treatmentProtocol ?? null,
+        recommendedSessions: f.recommendedSessions ?? null,
+        recommendedServicesJson: f.recommendedServices
+          ? JSON.stringify(f.recommendedServices)
+          : null,
+        followUp: f.followUp ?? null,
+        serviceId: f.serviceId ?? null,
+        status: f.status,
+      },
+    });
   });
 
   const meta = requestMeta(req);

@@ -111,7 +111,7 @@ export function NotificationBell() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-40 mt-2 w-[360px] overflow-hidden rounded-md border bg-card shadow-lg">
+        <div className="absolute right-0 z-40 mt-2 w-[min(360px,90vw)] overflow-hidden rounded-md border bg-card shadow-lg">
           <div className="flex items-center justify-between border-b px-4 py-2">
             <p className="text-sm font-semibold">Notifications</p>
             {unreadCount > 0 ? (
@@ -130,25 +130,38 @@ export function NotificationBell() {
                 {items.map((n) => (
                   <li
                     key={n.id}
-                    className={`px-4 py-3 ${n.isRead ? "" : "bg-muted/40"}`}
-                    onClick={() => !n.isRead && void markRead(n.id)}
+                    className={n.isRead ? "" : "bg-muted/40"}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{n.title}</p>
-                        <p className="text-xs text-muted-foreground">{n.message}</p>
-                        <p className="mt-1 text-[10px] text-muted-foreground">
-                          {new Date(n.createdAt).toLocaleString("en-IN", {
-                            day: "2-digit",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
+                    <button
+                      type="button"
+                      onClick={() => !n.isRead && void markRead(n.id)}
+                      disabled={n.isRead}
+                      aria-label={
+                        n.isRead
+                          ? `${n.title} (already read)`
+                          : `Mark notification "${n.title}" as read`
+                      }
+                      className="block w-full cursor-pointer px-4 pt-3 pb-1 text-left transition-colors focus:outline-none focus-visible:bg-muted/70 hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{n.title}</p>
+                          <p className="text-xs text-muted-foreground">{n.message}</p>
+                          <p className="mt-1 text-[10px] text-muted-foreground">
+                            {new Date(n.createdAt).toLocaleString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                        {!n.isRead ? <Badge variant="info" className="text-[10px]">new</Badge> : null}
                       </div>
-                      {!n.isRead ? <Badge variant="info" className="text-[10px]">new</Badge> : null}
+                    </button>
+                    <div className="px-4 pb-3">
+                      <DeepLink type={n.type} metadata={n.metadata} />
                     </div>
-                    <DeepLink type={n.type} metadata={n.metadata} />
                   </li>
                 ))}
               </ul>

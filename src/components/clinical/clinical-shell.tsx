@@ -295,8 +295,35 @@ export function ClinicalShell({
   // Manual buttons: cancel any queued autosave, then enqueue the explicit save
   // (which flushes inventory and may COMPLETE). Serialised behind any in-flight
   // autosave so it can never race into a duplicate row.
+  //
+  // For COMPLETED we add two gates because locking is irreversible (append-only
+  // afterwards; only the OWNER role can edit a locked record). First, ensure
+  // the draft actually has content — locking an empty record is almost
+  // certainly an accident. Second, ask the user to confirm. Cheap insurance
+  // against a costly call to ops.
   function save(status: "DRAFT" | "COMPLETED") {
     if (viewOnly) return;
+    if (status === "COMPLETED") {
+      const hasContent =
+        chiefComplaints.trim() !== "" ||
+        diagnosis.trim() !== "" ||
+        planOfCare.trim() !== "" ||
+        followUp.trim() !== "" ||
+        recommended.length > 0 ||
+        Object.values(formData).some(
+          (v) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0),
+        );
+      if (!hasContent) {
+        toast.error(
+          "Add at least one note — chief complaint, diagnosis, plan, or a session row — before locking.",
+        );
+        return;
+      }
+      const confirmed = window.confirm(
+        "Lock this record as completed?\n\nOnce locked it becomes append-only. Only an admin can edit it after.",
+      );
+      if (!confirmed) return;
+    }
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;

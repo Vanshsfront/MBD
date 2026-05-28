@@ -699,23 +699,45 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/50 px-4 py-3">
-            <div className="text-sm">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                Estimated total (incl. GST, after additional discount)
-              </p>
-              <p className="text-xl font-semibold tabular-nums">
-                {formatINR(totals.afterDiscount)}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                Lines {formatINR(totals.linesGross)} + GST {formatINR(totals.linesGst)} ={" "}
-                {formatINR(totals.subtotal)}
-              </p>
-            </div>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Creating…" : "Create invoice"}
-            </Button>
-          </div>
+          {(() => {
+            // Pre-flight gate for the Create button — keeps the same checks as
+            // validate() above but lets us disable the button so FO can see at a
+            // glance what's missing instead of clicking and reading a toast.
+            const missingPatient = !clientId;
+            const noLines = lines.length === 0;
+            const badQty = lines.some((l) => l.qty < 1);
+            const cantCreate = pending || missingPatient || noLines || badQty;
+            const hint =
+              missingPatient
+                ? "Pick a patient first."
+                : noLines
+                  ? "Add at least one line."
+                  : badQty
+                    ? "Every line needs a quantity of 1 or more."
+                    : null;
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/50 px-4 py-3">
+                <div className="text-sm">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Estimated total (incl. GST, after additional discount)
+                  </p>
+                  <p className="text-xl font-semibold tabular-nums">
+                    {formatINR(totals.afterDiscount)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Lines {formatINR(totals.linesGross)} + GST {formatINR(totals.linesGst)} ={" "}
+                    {formatINR(totals.subtotal)}
+                  </p>
+                  {hint ? (
+                    <p className="mt-1 text-[11px] font-medium text-amber-700">{hint}</p>
+                  ) : null}
+                </div>
+                <Button type="submit" disabled={cantCreate}>
+                  {pending ? "Creating…" : "Create invoice"}
+                </Button>
+              </div>
+            );
+          })()}
         </form>
       </CardContent>
     </Card>
