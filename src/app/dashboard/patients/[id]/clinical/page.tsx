@@ -20,15 +20,25 @@ import {
 } from "@/lib/clinical-schemas";
 import { ClinicalShell } from "@/components/clinical/clinical-shell";
 import { Card, CardContent } from "@/components/ui/card";
+import { PastRecordsList } from "./past-records-list";
 
 export const metadata = { title: "Clinical record — MBD Clinic OS" };
 
 export default async function ClinicalPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ consult?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
+  // ?consult=1 unlocks the consultation form on first arrival. Without it,
+  // a clinical user without a saved DRAFT sees the past-records repository
+  // and a "Start consultation" CTA — keeps the blank form hidden until the
+  // therapist is actively consulting, so opening the patient just to
+  // review history doesn't dump a blank intake on the screen.
+  const consultMode = sp.consult === "1";
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!hasPermission(session.user.role, "patients:view_assigned")) redirect("/dashboard");
@@ -50,9 +60,36 @@ export default async function ClinicalPage({
           },
         },
       },
+      // Latest intake form (used to surface the consent for download in the
+      // past records list).
+      intakeForms: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { id: true, createdAt: true, consentSigned: true, consentMethod: true },
+      },
     },
   });
   if (!client) notFound();
+
+  // Past records repository — every completed consultation for this patient
+  // across ALL template families, plus the consent document if signed.
+  // Each entry is downloadable as a PDF via the render endpoints. Always
+  // shown on the clinical page so therapists can browse the patient's
+  // documented history without leaving the screen.
+  const pastConsultations = await prisma.consultation.findMany({
+    where: { clientId: id, status: { in: ["COMPLETED", "LOCKED"] } },
+    orderBy: { date: "desc" },
+    take: 30,
+    select: {
+      id: true,
+      templateKey: true,
+      date: true,
+      status: true,
+      consultant: { select: { name: true } },
+    },
+  });
+  const consentSigned =
+    client.intakeForms.length > 0 && client.intakeForms[0]!.consentSigned;
 
   const isClinical = isClinicalRole(session.user.role);
   const ownActive = client.doctorAssignments.find(
@@ -162,45 +199,96 @@ export default async function ClinicalPage({
       })
     : [];
 
+  // Gate the blank consultation form behind "Start consultation" for
+  // clinical roles unless they already have a DRAFT in this template family
+  // (in which case auto-resume) or the page was opened with ?consult=1.
+  // Non-clinical roles (OWNER/ADMIN/FO/DEV) always see the form so they
+  // can review or, for OWNER, edit COMPLETED records.
+  const ownDraft = consultations.find(
+    (c) => c.consultantId === session.user.id && c.status === "DRAFT",
+  );
+  const showForm =
+    !isClinical || // non-clinical roles always see it
+    viewOnlyReassignedAway || // reassigned-away therapist reads their old record
+    !!ownDraft || // resume an active draft
+    consultMode; // explicit "Start consultation"
+
   return (
-    <ClinicalShell
-      clientId={id}
-      patientName={`${client.firstName} ${client.lastName}`}
-      templateKey={templateKey}
-      isFirstVisit={isFirstVisitTemplate(templateKey)}
-      department={department}
-      currentUserId={session.user.id}
-      canEditCompleted={hasPermission(
-        session.user.role,
-        "patients:edit_completed_clinical_record",
+    <div className="space-y-4">
+      <PastRecordsList
+        clientId={id}
+        consentSigned={consentSigned}
+        consultations={pastConsultations.map((c) => ({
+          id: c.id,
+          templateKey: c.templateKey,
+          date: c.date,
+          status: c.status,
+          consultant: c.consultant ? { name: c.consultant.name } : null,
+        }))}
+      />
+
+      {showForm ? (
+        <ClinicalShell
+          clientId={id}
+          patientName={`${client.firstName} ${client.lastName}`}
+          templateKey={templateKey}
+          isFirstVisit={isFirstVisitTemplate(templateKey)}
+          department={department}
+          currentUserId={session.user.id}
+          canEditCompleted={hasPermission(
+            session.user.role,
+            "patients:edit_completed_clinical_record",
+          )}
+          viewOnly={viewOnlyReassignedAway}
+          consultations={consultations.map((c) => ({
+            id: c.id,
+            date: c.date.toISOString(),
+            status: c.status,
+            consultantId: c.consultantId,
+            consultantName: c.consultant?.name ?? null,
+            templateKey: c.templateKey,
+            chiefComplaints: c.chiefComplaints,
+            diagnosis: c.diagnosis,
+            recommendedSessions: c.recommendedSessions,
+            formData: c.formData,
+            recommendedServicesJson: c.recommendedServicesJson,
+          }))}
+          services={services.map((s) => ({
+            id: s.id,
+            name: s.name,
+            basePrice: s.basePrice,
+            gstRate: s.gstRate,
+            participantCount: s.participantCount,
+          }))}
+          inventory={inventory.map((it) => ({
+            inventoryItemId: it.id,
+            productName: it.product.name,
+            stock: it.stock,
+            hsnSac: it.product.hsnSacCode ?? "",
+          }))}
+        />
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-start gap-3 p-8">
+            <p className="text-sm font-medium">No active consultation in progress.</p>
+            <p className="text-sm text-muted-foreground">
+              Past records sit above. When you&apos;re ready to record a new
+              consultation or follow-up for{" "}
+              <span className="font-medium">
+                {client.firstName} {client.lastName}
+              </span>
+              , click below — the form for {department} loads and autosaves as
+              you go.
+            </p>
+            <a
+              href={`/dashboard/patients/${id}/clinical?consult=1`}
+              className="rounded-md bg-[color:var(--text-primary)] px-4 py-2 text-sm font-medium text-white shadow-[0_4px_12px_-6px_rgba(26,26,30,0.4)] hover:bg-[#2a2a30]"
+            >
+              Start consultation
+            </a>
+          </CardContent>
+        </Card>
       )}
-      viewOnly={viewOnlyReassignedAway}
-      consultations={consultations.map((c) => ({
-        id: c.id,
-        date: c.date.toISOString(),
-        status: c.status,
-        consultantId: c.consultantId,
-        consultantName: c.consultant?.name ?? null,
-        templateKey: c.templateKey,
-        chiefComplaints: c.chiefComplaints,
-        diagnosis: c.diagnosis,
-        recommendedSessions: c.recommendedSessions,
-        formData: c.formData,
-        recommendedServicesJson: c.recommendedServicesJson,
-      }))}
-      services={services.map((s) => ({
-        id: s.id,
-        name: s.name,
-        basePrice: s.basePrice,
-        gstRate: s.gstRate,
-        participantCount: s.participantCount,
-      }))}
-      inventory={inventory.map((it) => ({
-        inventoryItemId: it.id,
-        productName: it.product.name,
-        stock: it.stock,
-        hsnSac: it.product.hsnSacCode ?? "",
-      }))}
-    />
+    </div>
   );
 }

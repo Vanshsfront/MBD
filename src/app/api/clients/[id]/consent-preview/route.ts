@@ -1,11 +1,18 @@
-// Render the COMMON PATIENT INTAKE FORM prefilled with the patient's data.
-// Returns DOCX by default, or PDF if ?format=pdf is passed (LibreOffice).
+// POST /api/clients/[id]/consent-preview — render the consent DOCX with a
+// transient signature embedded so the FO can review the document BEFORE
+// committing the signature to the database. Returns DOCX (or PDF when
+// ?format=pdf), but never writes to the DB.
+//
+// Body shape: { signatureDataUrl: "data:image/png;base64,...", method: "DIGITAL_PAD" | "PHYSICAL_SCAN" }
+//
+// The "real" save still goes through POST /api/clients/[id]/consent.
 
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/api-auth";
 import { renderDocxTemplate, convertDocxToPdf } from "@/lib/templates/docx";
-import { CATEGORY_KEYS, SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/lib/categories";
+import { CATEGORY_KEYS, type ServiceCategoryKey } from "@/lib/categories";
 
 interface AddressJson {
   line1?: string;
@@ -19,13 +26,27 @@ interface EmergencyJson {
   relationship?: string;
 }
 
-export async function GET(
+const bodySchema = z.object({
+  signatureDataUrl: z.string().min(1).max(5_000_000),
+  method: z.enum(["DIGITAL_PAD", "PHYSICAL_SCAN"]).optional(),
+});
+
+export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await requirePermission("patients:assign_therapist");
   if (!auth.ok) return auth.response;
   const { id } = await params;
+
+  const body = (await req.json()) as unknown;
+  const parsed = bodySchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "validation_failed", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
 
   const client = await prisma.client.findUnique({
     where: { id },
@@ -39,9 +60,6 @@ export async function GET(
   });
   if (!client) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  // Pull the FO's signature image (PRD §6.1: consent form has FO signature
-  // slot). Patient signature is captured at /consent step and stored on
-  // IntakeForm.signatureDataUrl.
   const foSignature = await prisma.staff.findUnique({
     where: { id: auth.user.id },
     select: { signatureDataUrl: true },
@@ -52,11 +70,7 @@ export async function GET(
 
   const intake = client.intakeForms[0] ?? null;
   const selected = parseSelectedCategories(intake?.selectedCategories ?? null);
-  // Only render a checkbox next to categories the patient actually picked.
-  // Previously we wrote "☐" for the unticked ones, which made the form look
-  // like a paper questionnaire where every category appeared twice (the
-  // empty box + a ticked one elsewhere). Empty string here drops the box
-  // entirely so the consent reads as a clean summary of selections.
+  // Match the persisted render: ticked-only, no empty boxes.
   const checkboxMap: Record<string, string> = {};
   for (const k of CATEGORY_KEYS) checkboxMap[k] = selected.includes(k) ? "☑" : "";
 
@@ -93,10 +107,9 @@ export async function GET(
     },
     assignedTo: assignedNames.join(", "),
     assignedBy: auth.user.name ?? auth.user.email ?? "",
-    // Image-module placeholders ({{%patientSignature}} / {{%frontOffice.signature}}).
-    // Both fall back to a 1x1 transparent PNG when the data URL is empty —
-    // the renderer never crashes for un-signed templates.
-    patientSignature: intake?.signatureDataUrl ?? "",
+    // Use the transient signature from the request body, NOT what's on file.
+    // This is the whole point of the preview endpoint.
+    patientSignature: parsed.data.signatureDataUrl,
     frontOffice: {
       name: auth.user.name ?? "",
       signature: foSignature?.signatureDataUrl ?? "",
@@ -112,13 +125,11 @@ export async function GET(
         status: 200,
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="consent-${client.clientCode}.pdf"`,
+          "Content-Disposition": `inline; filename="consent-preview-${client.clientCode}.pdf"`,
         },
       });
     } catch (err) {
-      // LibreOffice missing/crashed/timed out — never 500; fall back to the
-      // editable DOCX so the FO still gets the consent document.
-      console.error("[consent render] PDF conversion failed; returning DOCX", err);
+      console.error("[consent preview] PDF conversion failed; returning DOCX", err);
     }
   }
 
@@ -127,7 +138,7 @@ export async function GET(
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename="consent-${client.clientCode}.docx"`,
+      "Content-Disposition": `attachment; filename="consent-preview-${client.clientCode}.docx"`,
     },
   });
 }
@@ -166,7 +177,3 @@ function formatDate(d: Date): string {
 function formatTime(d: Date): string {
   return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
 }
-
-// Suppress unused-import lint for SERVICE_CATEGORIES (used only for types
-// elsewhere; explicit reference here keeps tree-shaking honest).
-void SERVICE_CATEGORIES;

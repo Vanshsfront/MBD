@@ -467,6 +467,13 @@ function AssignPanel({
 function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => void }) {
   const [method, setMethod] = useState<"DIGITAL_PAD" | "PHYSICAL_SCAN">("DIGITAL_PAD");
   const [pending, setPending] = useState(false);
+  // Two-stage preview-then-finalize state:
+  //   capturedSignature stores the data URL once "Preview" succeeds, so
+  //     "Finalize" doesn't ask the patient to sign again
+  //   previewed flips true after the FO opens the preview blob so the
+  //     "Finalize" button only shows up post-review
+  const [capturedSignature, setCapturedSignature] = useState<string | null>(null);
+  const [previewed, setPreviewed] = useState(false);
 
   // Digital pad
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -474,6 +481,14 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
 
   // Scan upload
   const [scanDataUrl, setScanDataUrl] = useState<string | null>(null);
+
+  // Re-arming: when the FO switches signature method or clears the pad we
+  // discard any previously-previewed capture so they go through the loop
+  // again. Prevents a stale signature getting finalised after a "Clear".
+  function rearm() {
+    setCapturedSignature(null);
+    setPreviewed(false);
+  }
 
   useEffect(() => {
     if (method !== "DIGITAL_PAD") return;
@@ -493,6 +508,7 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
 
   function clearPad() {
     padRef.current?.clear();
+    rearm();
   }
 
   function downloadConsent(format: "docx" | "pdf") {
@@ -510,36 +526,69 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
     const reader = new FileReader();
     reader.onload = () => {
       setScanDataUrl(typeof reader.result === "string" ? reader.result : null);
+      rearm();
     };
     reader.readAsDataURL(file);
   }
 
-  async function submit() {
-    // Client-side guard so a future caller that mounts ConsentPanel from
-    // outside the assign flow gets a clear message instead of a 400 from
-    // the server. The assign flow auto-routes to "intake" first now, so
-    // this only fires if state somehow drifts.
+  function collectSignature(): string | null {
     if (client.intakeFormId == null) {
       toast.error(
         "This patient hasn't filled out the intake form yet. Capture it before saving consent.",
       );
-      return;
+      return null;
     }
-    let dataUrl: string | null = null;
     if (method === "DIGITAL_PAD") {
       if (!padRef.current || padRef.current.isEmpty()) {
         toast.error("Have the patient sign on the pad");
-        return;
+        return null;
       }
-      dataUrl = padRef.current.toDataURL("image/png");
-    } else {
-      if (!scanDataUrl) {
-        toast.error("Upload the signed scan first");
-        return;
-      }
-      dataUrl = scanDataUrl;
+      return padRef.current.toDataURL("image/png");
     }
+    if (!scanDataUrl) {
+      toast.error("Upload the signed scan first");
+      return null;
+    }
+    return scanDataUrl;
+  }
 
+  // Step 1: render the consent with the IN-MEMORY signature so the FO can
+  // review BEFORE persisting. Does NOT save anything to the DB. The new
+  // tab gets a one-shot PDF/DOCX from /consent-preview.
+  async function preview() {
+    const dataUrl = collectSignature();
+    if (!dataUrl) return;
+    setPending(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${client.id}/consent-preview?format=pdf`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signatureDataUrl: dataUrl, method }),
+        },
+      );
+      if (!res.ok) {
+        throw new Error(await readApiError(res, { fallback: "Couldn't render preview." }));
+      }
+      const blob = await res.blob();
+      const previewBlobUrl = URL.createObjectURL(blob);
+      window.open(previewBlobUrl, "_blank");
+      // Cache the captured signature so the final-save step doesn't ask the
+      // patient to sign again. This is the whole point of the two-step flow.
+      setCapturedSignature(dataUrl);
+      setPreviewed(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Preview failed");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  // Step 2: the FO has eyeballed the preview and is happy. Persist.
+  async function finalize() {
+    const dataUrl = capturedSignature ?? collectSignature();
+    if (!dataUrl) return;
     setPending(true);
     try {
       const res = await fetch(`/api/clients/${client.id}/consent`, {
@@ -550,7 +599,7 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
       if (!res.ok) {
         throw new Error(await readApiError(res, { fallback: "Couldn't save consent." }));
       }
-      toast.success("Consent captured. Patient is now ACTIVE.");
+      toast.success("Consent finalized. Patient is now ACTIVE.");
       onDone();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Consent submit failed");
@@ -585,14 +634,20 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
           <Button
             type="button"
             variant={method === "DIGITAL_PAD" ? "default" : "outline"}
-            onClick={() => setMethod("DIGITAL_PAD")}
+            onClick={() => {
+              setMethod("DIGITAL_PAD");
+              rearm();
+            }}
           >
             Digital pad
           </Button>
           <Button
             type="button"
             variant={method === "PHYSICAL_SCAN" ? "default" : "outline"}
-            onClick={() => setMethod("PHYSICAL_SCAN")}
+            onClick={() => {
+              setMethod("PHYSICAL_SCAN");
+              rearm();
+            }}
           >
             Upload scan
           </Button>
@@ -635,11 +690,44 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
           </section>
         )}
 
-        <div className="flex justify-end">
-          <Button onClick={submit} disabled={pending}>
-            {pending ? "Saving…" : "Save consent →"}
-          </Button>
-        </div>
+        {/* Two-stage flow per PRD §6.5 update:
+            (1) FO clicks "Preview signed consent" — opens a new tab with
+                the rendered DOCX/PDF containing the captured signature.
+            (2) Once previewed, "Confirm & finalize" appears.
+            This prevents accidental commit of a wrong/blank/wonky signature
+            and gives the FO a chance to see the document end-to-end before
+            the patient leaves the desk. */}
+        <section className="rounded-md border border-[color:var(--border-light)] bg-muted/30 p-3">
+          <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+            {previewed ? "Step 2 of 2 — final save" : "Step 1 of 2 — review before saving"}
+          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              {previewed
+                ? "If the consent looks right, finalize. If the signature needs another go, clear and re-sign."
+                : "Capture the signature, then preview the consent. We'll show you the rendered form before anything is saved."}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={previewed ? "outline" : "default"}
+                onClick={preview}
+                disabled={pending}
+              >
+                {pending && !previewed
+                  ? "Rendering…"
+                  : previewed
+                    ? "Preview again"
+                    : "Preview signed consent →"}
+              </Button>
+              {previewed ? (
+                <Button onClick={finalize} disabled={pending}>
+                  {pending ? "Saving…" : "Confirm & finalize"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </section>
       </CardContent>
     </Card>
   );

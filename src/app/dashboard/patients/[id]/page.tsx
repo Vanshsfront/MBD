@@ -141,20 +141,38 @@ export default async function PatientOverview({
             />
           ) : null}
         </CardHeader>
-        <CardContent className="space-y-1 text-sm">
-          <KV k="Phone" v={client.phone} />
-          <KV k="Email" v={client.email} />
-          <KV k="Age / Sex" v={[client.age, client.sex].filter(Boolean).join(" ")} />
-          <KV k="DOB" v={client.dob ? formatDate(client.dob) : null} />
-          <KV k="Occupation" v={client.occupation} />
-          <KV k="Sport" v={client.sport} />
-          <KV k="Address" v={[address?.line1, address?.city, address?.pincode].filter(Boolean).join(", ")} />
-          <KV k="Emergency" v={emergency?.name ? `${emergency.name} (${emergency.relationship ?? "—"}) · ${emergency.phone ?? ""}` : null} />
-          <KV k="Customer type" v={client.customerType} />
-          <KV k="Referral" v={client.referralSource?.name ?? client.referredByName} />
-          <KV k="Registered" v={formatDate(client.createdAt)} />
+        <CardContent className="text-sm">
+          <KVGroup title="Contact">
+            <KV k="Phone" v={client.phone} />
+            <KV k="Email" v={client.email} />
+          </KVGroup>
+          <KVGroup title="Personal">
+            <KV k="Age / Sex" v={[client.age, client.sex].filter(Boolean).join(" ")} />
+            <KV k="DOB" v={client.dob ? formatDate(client.dob) : null} />
+            <KV k="Occupation" v={client.occupation} />
+            <KV k="Sport" v={client.sport} />
+          </KVGroup>
+          <KVGroup title="Address">
+            <KV
+              k="Address"
+              v={[address?.line1, address?.city, address?.pincode].filter(Boolean).join(", ")}
+            />
+            <KV
+              k="Emergency"
+              v={
+                emergency?.name
+                  ? `${emergency.name} (${emergency.relationship ?? "—"}) · ${emergency.phone ?? ""}`
+                  : null
+              }
+            />
+          </KVGroup>
+          <KVGroup title="Acquisition">
+            <KV k="Customer type" v={client.customerType} />
+            <KV k="Referral" v={client.referralSource?.name ?? client.referredByName} />
+            <KV k="Registered" v={formatDate(client.createdAt)} />
+          </KVGroup>
           {canSharePortal ? (
-            <div className="pt-2">
+            <div className="pt-4">
               <SharePortalButton clientId={client.id} />
             </div>
           ) : null}
@@ -299,11 +317,27 @@ export default async function PatientOverview({
 }
 
 function KV({ k, v }: { k: string; v: string | number | null | undefined }) {
+  const display = v != null && v !== "" ? String(v) : null;
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">{k}</span>
-      <span className="text-right">{v != null && v !== "" ? String(v) : <span className="text-muted-foreground">—</span>}</span>
+    <div className="grid grid-cols-[88px_1fr] items-baseline gap-x-3 gap-y-0.5 py-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {k}
+      </span>
+      <span className={display ? "text-sm leading-snug" : "text-sm text-muted-foreground"}>
+        {display ?? "—"}
+      </span>
     </div>
+  );
+}
+
+function KVGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-t border-[color:var(--border-light)] py-3 first:border-t-0 first:pt-1">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-tertiary)]">
+        {title}
+      </p>
+      <div className="space-y-0">{children}</div>
+    </section>
   );
 }
 
