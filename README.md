@@ -21,28 +21,39 @@ LibreOffice headless (DOCX→PDF) · node-cron.
 
 ## Run locally (Windows or *nix)
 
-Requires **Node 20+**, **PostgreSQL 16**, and **LibreOffice** (for DOCX→PDF).
+Requires **Node 20+** and **LibreOffice** (for DOCX→PDF). Database can be
+either hosted **Supabase** (default) or local **Postgres in Docker** (fallback).
 
 ```bash
-# 1. Postgres (Docker example)
-docker run -d --name mbd-postgres -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mbd -p 5432:5432 postgres:16
-
-# 2. .env  (DATABASE_URL + DIRECT_URL + AUTH_SECRET + SOFFICE_BIN)
-#   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/mbd?schema=public"
-#   DIRECT_URL="postgresql://postgres:postgres@localhost:5432/mbd?schema=public"
-#   AUTH_SECRET="..."   # generate: npx auth secret
-#   SOFFICE_BIN="C:/Program Files/LibreOffice/program/soffice.exe"   # soffice path
-
-# 3. Install, generate, push, seed
+# 1. Install + generate
 npm install
 npx prisma generate
-npm run db:push
-npm run db:seed
 
-# 4. Dev server
+# 2. Dev server
 npm run dev
 # → http://localhost:3000   (login marazban@mbd.in / mbd2026 — see ../mbd-docs/HANDOFF.md)
+```
+
+### Database — Supabase (default) ↔ Docker (offline fallback)
+
+`.env` points at Supabase (project `miaoxysgstytvnuvuvsw`, region `ap-southeast-1`).
+For offline / network-free dev, swap to the Docker fallback:
+
+```bash
+cp .env.docker .env             # swap to local
+docker start mbd-postgres       # start the container (was: docker run … postgres:16)
+# … work offline …
+cp .env.supabase .env           # swap back to Supabase when ready
+```
+
+If `.env.supabase` doesn't exist after a swap-back, the live config is the
+`.env` shape — see `.env.local` for the Supabase publishable key + URL.
+
+To reset the DB on first run / after a schema change:
+
+```bash
+npm run db:push
+npm run db:seed
 ```
 
 Seed: 1 Centre (`COL-MBD`), 7 Departments, ~45 Services, 13 Products, 22 Staff,
