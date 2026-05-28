@@ -22,20 +22,30 @@ export default async function PatientLayout({
   const client = await prisma.client.findUnique({
     where: { id },
     include: {
-      // All assignments (active + ended): an ever-assigned clinician may open
-      // the record (the clinical page renders reassigned-away as view-only);
-      // only the never-assigned are blocked.
+      // Both assignments AND appointments scoped to me — a clinical user may
+      // legitimately reach this page via either a (current/past) assignment
+      // OR a (past/future) appointment. Only the truly-unrelated are blocked.
+      // The clinical sub-page still renders reassigned-away as view-only.
       doctorAssignments: { select: { staffId: true } },
+      appointments: {
+        where: isClinicalRole(session.user.role)
+          ? { therapistId: session.user.id }
+          : undefined,
+        select: { id: true },
+        take: 1,
+      },
       flags: { where: { isActive: true }, select: { type: true, label: true, color: true } },
     },
   });
   if (!client) notFound();
 
-  // Enforce assigned-only visibility for clinical roles (PRD §3.2 Q1). Truly
-  // unassigned → a clear blocked card (OG audit fix), NOT a silent redirect.
+  // Enforce relationship-based visibility for clinical roles (PRD §3.2 Q1).
+  // "Related" = ever-assigned OR has any appointment with me. Truly
+  // unrelated → a clear blocked card, NOT a silent redirect.
   if (isClinicalRole(session.user.role)) {
     const everAssigned = client.doctorAssignments.some((a) => a.staffId === session.user.id);
-    if (!everAssigned) {
+    const everBooked = client.appointments.length > 0;
+    if (!everAssigned && !everBooked) {
       return (
         <div className="py-10">
           <AccessBlocked />

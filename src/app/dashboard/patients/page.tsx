@@ -18,17 +18,28 @@ export default async function PatientsPage() {
 
   const restrictToOwn = isClinicalRole(session.user.role);
   const centreId = await activeCentreId();
+  const me = session.user.id;
+  const now = new Date();
+
+  // Clinical scoping: include patients with EITHER any (active or ended)
+  // assignment to me, OR any appointment with me — past or future. Prior
+  // behaviour only matched current active assignments, which hid patients
+  // whose only link was an upcoming booking or a closed historical
+  // assignment. PRD §3.2 Q1 still applies (no cross-therapist snooping):
+  // both branches gate on me.
+  const clinicalScope = restrictToOwn
+    ? {
+        OR: [
+          { doctorAssignments: { some: { staffId: me } } },
+          { appointments: { some: { therapistId: me } } },
+        ],
+      }
+    : {};
 
   const clients = await prisma.client.findMany({
     where: {
       ...(centreId ? { centreId } : {}),
-      ...(restrictToOwn
-        ? {
-            doctorAssignments: {
-              some: { staffId: session.user.id, endedAt: null },
-            },
-          }
-        : {}),
+      ...clinicalScope,
       status: { in: ["ACTIVE", "INACTIVE"] },
     },
     orderBy: [{ status: "asc" }, { firstName: "asc" }],
@@ -38,6 +49,22 @@ export default async function PatientsPage() {
         include: { staff: { select: { name: true } } },
       },
       flags: { where: { isActive: true }, select: { type: true, label: true, color: true } },
+      // Surface next upcoming and most-recent past appointment so the row
+      // shows a "Next: ..." or "Last: ..." hint. We only need a small slice
+      // around "now" (last ~60 days + everything upcoming) — that bounds
+      // the per-patient row count to a couple dozen at most, vs unbounded
+      // history which would explode with 200 patients × 100 appointments.
+      appointments: {
+        where: {
+          ...(restrictToOwn ? { therapistId: me } : {}),
+          startTime: {
+            gte: new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000),
+          },
+        },
+        orderBy: { startTime: "asc" },
+        select: { id: true, startTime: true, status: true, therapistId: true },
+        take: 50,
+      },
     },
     take: 200,
   });
@@ -78,36 +105,69 @@ export default async function PatientsPage() {
       <Card>
         <CardContent className="p-0">
           <ul className="divide-y">
-            {clients.map((c) => (
-              <li key={c.id}>
-                <Link
-                  href={`/dashboard/patients/${c.id}`}
-                  className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 transition-colors hover:bg-accent"
-                >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium">
-                        {c.firstName} {c.lastName}
+            {clients.map((c) => {
+              // Appointments come ordered ascending by startTime; pull the
+              // first one in the future and the most recent one in the past
+              // (cancelled/no-show appointments excluded from the "next" hint
+              // so the therapist sees real upcoming work, not stale cancels).
+              const upcomingActive = c.appointments
+                .filter(
+                  (a) =>
+                    new Date(a.startTime) >= now &&
+                    a.status !== "CANCELLED" &&
+                    a.status !== "NO_SHOW",
+                );
+              const next = upcomingActive[0] ?? null;
+              const pastList = c.appointments.filter(
+                (a) => new Date(a.startTime) < now,
+              );
+              const last = pastList[pastList.length - 1] ?? null;
+              return (
+                <li key={c.id}>
+                  <Link
+                    href={`/dashboard/patients/${c.id}`}
+                    className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 transition-colors hover:bg-accent"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">
+                          {c.firstName} {c.lastName}
+                        </p>
+                        <FlagBadges flags={c.flags} max={4} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {c.clientCode} · {c.phone}
+                        {c.age != null ? ` · ${c.age}${c.sex ?? ""}` : ""}
+                        {c.doctorAssignments.length > 0
+                          ? ` · ${c.doctorAssignments.map((a) => a.staff?.name).filter(Boolean).join(", ")}`
+                          : ""}
                       </p>
-                      <FlagBadges flags={c.flags} max={4} />
+                      <p className="text-[11px] text-muted-foreground">
+                        Registered {formatRegisteredOn(c.createdAt)}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {c.clientCode} · {c.phone}
-                      {c.age != null ? ` · ${c.age}${c.sex ?? ""}` : ""}
-                      {c.doctorAssignments.length > 0
-                        ? ` · ${c.doctorAssignments.map((a) => a.staff?.name).filter(Boolean).join(", ")}`
-                        : ""}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Registered {formatRegisteredOn(c.createdAt)}
-                    </p>
-                  </div>
-                  <Badge variant={c.status === "ACTIVE" ? "success" : "default"}>
-                    {c.status}
-                  </Badge>
-                </Link>
-              </li>
-            ))}
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant={c.status === "ACTIVE" ? "success" : "default"}>
+                        {c.status}
+                      </Badge>
+                      {next ? (
+                        <span className="text-[11px] font-medium text-emerald-700">
+                          Next: {formatApptDate(next.startTime)}
+                        </span>
+                      ) : last ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          Last: {formatApptDate(last.startTime)}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">
+                          No appointments
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </CardContent>
       </Card>
@@ -122,5 +182,15 @@ function formatRegisteredOn(d: Date | string): string {
     day: "2-digit",
     month: "short",
     year: "numeric",
+  });
+}
+
+function formatApptDate(d: Date | string): string {
+  const date = d instanceof Date ? d : new Date(d);
+  return date.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
