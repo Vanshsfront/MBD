@@ -1,11 +1,18 @@
 // Auth gate. Protects /dashboard/*. Redirects unauthenticated users to /login
 // preserving the original destination. Public routes: /, /login, /intake/*,
 // /portal/*, /api/auth/*, static assets.
+//
+// Two auth layers run in this middleware:
+//   1. NextAuth (the primary; gates /dashboard via authEdge)
+//   2. Supabase SSR session refresh (touches getUser() so the supabase
+//      auth cookie stays fresh when present). Side-by-side, not competing.
+//      If NEXT_PUBLIC_SUPABASE_URL isn't set, the refresh is a no-op.
 
 import { NextResponse } from "next/server";
 import { authEdge } from "@/lib/auth-edge";
+import { updateSession } from "@/utils/supabase/middleware";
 
-export default authEdge((req) => {
+export default authEdge(async (req) => {
   const { pathname } = req.nextUrl;
   const isAuthed = !!req.auth;
 
@@ -23,7 +30,8 @@ export default authEdge((req) => {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  // Passthrough: refresh the Supabase session cookie before handing off.
+  return await updateSession(req);
 });
 
 export const config = {
