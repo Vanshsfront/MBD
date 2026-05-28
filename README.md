@@ -16,8 +16,8 @@ LibreOffice headless (DOCX→PDF) · node-cron.
 > richer per-role UX (multi-therapist assignment with a primary selector,
 > reschedule validation, surfaced client flags, a Recent/All/Products invoice
 > line picker), fixes the greeting + silent-redirect bugs, and applies baseline
-> security hardening. See `AUDIT_FINDINGS.md` for the full record and `HANDOFF.md`
-> for credentials + a demo walkthrough.
+> security hardening. Audit history, full handoff doc, and the Claude Design
+> bundle now live in the sibling `../mbd-docs/` folder (out of the main repo).
 
 ## Run locally (Windows or *nix)
 
@@ -42,7 +42,7 @@ npm run db:seed
 
 # 4. Dev server
 npm run dev
-# → http://localhost:3000   (login marazban@mbd.in / mbd2026 — see HANDOFF.md)
+# → http://localhost:3000   (login marazban@mbd.in / mbd2026 — see ../mbd-docs/HANDOFF.md)
 ```
 
 Seed: 1 Centre (`COL-MBD`), 7 Departments, ~45 Services, 13 Products, 22 Staff,
@@ -205,4 +205,4 @@ If any of these come back into scope, update PRD §10 first.
 - This is a rebuild — the prior attempt is in `/reference-material/legacy-codebase/`
   for reference. PRD wins where they disagree.
 
-See `PROGRESS.md` for the phase-by-phase ledger of what shipped when.
+See `../mbd-docs/PROGRESS.md` for the phase-by-phase ledger of what shipped when.

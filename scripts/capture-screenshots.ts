@@ -35,7 +35,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(__dirname, "..");
-const OUT_DIR = join(REPO_ROOT, "handoff", "design", "screenshots");
+// Handoff bundle lives in the sibling mbd-docs/ folder (kept outside the
+// main repo for cleanliness). The script auto-creates the path if missing.
+const OUT_DIR = resolve(REPO_ROOT, "..", "mbd-docs", "handoff", "design", "screenshots");
 const AUTH_STATE = join(__dirname, ".auth-state.json");
 
 const BASE_URL = process.env.CAPTURE_BASE_URL ?? "http://localhost:3000";
