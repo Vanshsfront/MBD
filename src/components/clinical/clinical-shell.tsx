@@ -5,7 +5,7 @@
 // disabled) and renders its own UI; the shell handles persistence,
 // recommendations, locking, and the PDF render link.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -161,9 +161,41 @@ export function ClinicalShell({
   const isLocked = draftStatus === "COMPLETED" && !canEditCompleted;
   const disabled = isLocked || viewOnly;
 
-  async function save(status: "DRAFT" | "COMPLETED") {
+  // ── Persistence + autosave ───────────────────────────────────────────
+  // Therapists shouldn't lose a half-written record, so drafts autosave 1.5s
+  // after the last edit. To stay correct we (a) serialise every persist —
+  // manual and auto — through one promise chain so they never overlap, and
+  // (b) mirror activeId in a ref so a persist queued behind the first one sees
+  // the id that the create returned (otherwise it would POST a duplicate row).
+  // Autosave never flushes inventory (that decrements stock) and never marks
+  // a record COMPLETED — those stay deliberate manual actions.
+  const [autoSaveStatus, setAutoSaveStatus] =
+    useState<"idle" | "saving" | "saved" | "error">("idle");
+  const activeIdRef = useRef<string | null>(activeId);
+  const chainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(false);
+  const autosaveRef = useRef<() => void>(() => {});
+
+  function enqueue(task: () => Promise<void>): Promise<void> {
+    const next = chainRef.current.catch(() => {}).then(task);
+    chainRef.current = next;
+    return next;
+  }
+
+  async function runPersist({
+    status,
+    flushInventory,
+    manual,
+  }: {
+    status: "DRAFT" | "COMPLETED";
+    flushInventory: boolean;
+    manual: boolean;
+  }) {
     if (viewOnly) return;
-    setPending(true);
+    if (status === "COMPLETED" && isLocked) return;
+    if (manual) setPending(true);
+    else setAutoSaveStatus("saving");
     try {
       const body = {
         clientId,
@@ -187,11 +219,12 @@ export function ClinicalShell({
         status,
       };
 
-      const res = activeId
+      const id = activeIdRef.current;
+      const res = id
         ? await fetch("/api/consultations", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: activeId, ...body }),
+            body: JSON.stringify({ id, ...body }),
           })
         : await fetch("/api/consultations", {
             method: "POST",
@@ -205,14 +238,15 @@ export function ClinicalShell({
         );
       }
       const out = (await res.json()) as { consultationId: string };
+      activeIdRef.current = out.consultationId;
       setActiveId(out.consultationId);
       setDraftStatus(status);
 
-      // Flush queued inventory usage AFTER the consultation save lands so
-      // we can bind InventoryLog rows to the consultationId. We swallow
-      // partial failures with a toast — the consultation itself is already
-      // persisted; the therapist can re-record usage if needed.
-      if (inventoryUsage.length > 0) {
+      // Flush queued inventory usage AFTER the consultation save lands so we
+      // can bind InventoryLog rows to the consultationId — but only on an
+      // explicit save, never on autosave (it decrements stock). We swallow
+      // partial failures with a toast; the consultation itself is persisted.
+      if (flushInventory && inventoryUsage.length > 0) {
         try {
           const ir = await fetch("/api/inventory-usage", {
             method: "POST",
@@ -243,15 +277,69 @@ export function ClinicalShell({
         }
       }
 
-      toast.success(
-        status === "COMPLETED" ? "Consultation completed and locked" : "Draft saved",
-      );
+      if (manual) {
+        toast.success(
+          status === "COMPLETED" ? "Consultation completed and locked" : "Draft saved",
+        );
+      } else {
+        setAutoSaveStatus("saved");
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed");
+      if (manual) toast.error(err instanceof Error ? err.message : "Save failed");
+      else setAutoSaveStatus("error");
     } finally {
-      setPending(false);
+      if (manual) setPending(false);
     }
   }
+
+  // Manual buttons: cancel any queued autosave, then enqueue the explicit save
+  // (which flushes inventory and may COMPLETE). Serialised behind any in-flight
+  // autosave so it can never race into a duplicate row.
+  function save(status: "DRAFT" | "COMPLETED") {
+    if (viewOnly) return;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    void enqueue(() => runPersist({ status, flushInventory: true, manual: true }));
+  }
+
+  // Point the autosave callback at the latest state on every render (no deps),
+  // so the debounce timer below always persists the current form.
+  useEffect(() => {
+    autosaveRef.current = () => {
+      // Only autosave an editable DRAFT — never re-draft a COMPLETED record,
+      // and skip until there's something meaningful to persist.
+      if (viewOnly || isLocked || draftStatus !== "DRAFT") return;
+      const hasContent =
+        !!activeIdRef.current ||
+        chiefComplaints.trim() !== "" ||
+        diagnosis.trim() !== "" ||
+        planOfCare.trim() !== "" ||
+        followUp.trim() !== "" ||
+        recommended.length > 0 ||
+        Object.values(formData).some(
+          (v) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0),
+        );
+      if (!hasContent) return;
+      void enqueue(() => runPersist({ status: "DRAFT", flushInventory: false, manual: false }));
+    };
+  });
+
+  // Debounced trigger: schedule an autosave 1.5s after the last edit. Skips the
+  // initial mount so an untouched form never creates a blank draft. Scheduling
+  // a timer (not a synchronous setState) keeps react-hooks/purity happy.
+  useEffect(() => {
+    if (viewOnly) return;
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    autosaveTimerRef.current = setTimeout(() => autosaveRef.current(), 1500);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [formData, chiefComplaints, diagnosis, planOfCare, followUp, recommended, viewOnly]);
 
   return (
     <div className="space-y-4">
@@ -324,6 +412,7 @@ export function ClinicalShell({
             isLocked={isLocked}
             isViewOnly={viewOnly}
             activeId={activeId}
+            autoSaveStatus={autoSaveStatus}
             onSaveDraft={() => save("DRAFT")}
             onComplete={() => save("COMPLETED")}
           />

@@ -4,6 +4,7 @@
 // template component focused on its own data shape, not duplicated layout.
 
 import { useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -434,6 +435,7 @@ export function FormFooter({
   isLocked,
   isViewOnly,
   activeId,
+  autoSaveStatus = "idle",
   onSaveDraft,
   onComplete,
 }: {
@@ -441,12 +443,29 @@ export function FormFooter({
   isLocked: boolean;
   isViewOnly: boolean;
   activeId: string | null;
+  autoSaveStatus?: "idle" | "saving" | "saved" | "error";
   onSaveDraft: () => void;
   onComplete: () => void;
 }) {
   const disabled = pending || isLocked || isViewOnly;
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
+      {!isViewOnly && !isLocked && autoSaveStatus !== "idle" ? (
+        <span
+          className={cn(
+            "mr-auto text-xs",
+            autoSaveStatus === "error"
+              ? "text-destructive"
+              : "text-muted-foreground",
+          )}
+        >
+          {autoSaveStatus === "saving"
+            ? "Saving…"
+            : autoSaveStatus === "saved"
+              ? "Saved ✓"
+              : "Autosave failed — use Save draft"}
+        </span>
+      ) : null}
       {activeId ? (
         <a
           href={`/api/consultations/${activeId}/render?format=pdf`}
