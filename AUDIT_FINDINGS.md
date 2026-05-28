@@ -99,8 +99,14 @@ The real gap: OG ships **8 UI primitives on Radix**; Clinic 2 ships **55 on Base
 - **Phase 4a UI** (`cf07b45`): dashboard error boundary; loading skeletons for admin/sessions/packages/patient-detail/calendar/intake; responsive intake-QR.
 - **Phase 4b UI** (`79dc6dd`): calendar booking + cancel dialogs moved to the accessible Dialog kit (focus trap, Esc, animation, ARIA); removed the hand-rolled `DialogShell`.
 
-**Remaining UI polish (functional today; tracked for a focused follow-up):**
-- **Raw `<select>` → Radix `Select`** in client-state forms (invoice creator, assign, record-payment, change-requests, admin promotions/flags/clinics dialogs). *Note:* these are already styled to match the kit and native selects are more touch-friendly on mobile, so this is cosmetic, not a defect. GET-form filter selects (audit/sessions/MIS) are intentionally left native.
-- **Per-list empty states** on the admin lists + sessions + packages; **clinical-record autosave** (manual Save-draft + resume already works); neumorphic/font polish on filter cards; flag-type icons.
+**UI-polish pass — DONE (`a91d223`→`e2af34a`):**
+- **Batch 1 (`a91d223`)** — the 6 server GET-form filter `<select>`s + filter-bar date inputs unified via `nativeControlClass` (`src/lib/select-styles.ts`), matching the `Input`/`SelectTrigger` look. These stay native (real `<form method=get>`, no JS).
+- **Batch 2 (`1f7b06a`)** — all 25 interactive client-state `<select>`s → Radix `Select` (calendar, invoice creator, assign, record-payment, change-requests, admin flag/promo/clinic dialogs, package builder, clinical inventory + recommended-service pickers). Empty choices use the `SELECT_NONE` sentinel (Radix forbids `SelectItem value=""`) or a `SelectValue` placeholder; all `onChange` side-effects + `disabled` preserved. The patient-facing `/intake` sex field is intentionally left native (mobile picker + bespoke validation).
+- **Batch 3 (`09e5fc4`)** — `<EmptyState>` on admin promotions / clinics / staff / flags (staff distinguishes "no staff" vs "no search match").
+- **Batch 4 (`d617e62`)** — per-type lucide icons on flag badges (VIP/CAUTION/OVERDUE/FOLLOWUP/CUSTOM).
+- **Batch 5 (`e2af34a`)** — clinical-record **debounced draft autosave**, serialised through one promise chain + `activeIdRef` (no duplicate consultations), never flushing inventory or COMPLETEing on auto, with a Saving/Saved/failed indicator.
+- Verified already-consistent (no change needed): filter-card neumorphic styling; audit diff font (`text-sm`/14px). Segment-level `error.tsx` for billing/admin judged redundant — the dashboard-level boundary already renders the on-brand card within the nav.
+
+**Remaining UI polish (cosmetic, optional):** upgrade the plain `<p>` empty messages on sessions / billing-packages / invoices to `<EmptyState>` for parity (they already show a message); searchable combobox for very long patient/service lists.
 
 **Deferred hardening (need schema/raw-SQL/infra; low urgency):** onDelete cascades (no delete endpoints exist), `ClientDoctorAssignment` partial-unique (Postgres partial index via raw migration), force-password-change, MFA/rate-limiting, Prisma migrations, strict CSP, Vitest. Tracked in HANDOFF.
