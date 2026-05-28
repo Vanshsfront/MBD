@@ -1,66 +1,76 @@
 # Screenshots for Claude Design
 
-Drop your screenshots into this folder, then upload the whole folder to Claude Design alongside the rest of `design/`. They give Claude Design concrete visual ground truth so its proposals carry your warm-neumorphic language rather than inventing a new one.
+These are auto-generated. Don't capture by hand.
 
-## What to capture
+## Regenerate
 
-Two viewports per screen — desktop and mobile. Total = 16 PNGs.
+In one terminal:
 
-| # | Screen | URL | Why |
-|---|--------|-----|-----|
-| 1 | Invoice builder | `/dashboard/billing/invoices/new` | Most complex screen; highest design payoff |
-| 2 | Clinical record | `/dashboard/patients/COL-MBD-DEMO/clinical` | Long form; needs section nav redesign |
-| 3 | Calendar | `/dashboard/calendar` | FullCalendar embed; inline conflict overlays |
-| 4 | Assignment queue | `/dashboard/assign` | Multi-therapist picker; consent capture |
-| 5 | Patient detail | `/dashboard/patients/COL-MBD-DEMO` | Sticky chrome candidate (Epic/Athena pattern) |
-| 6 | MIS report | `/dashboard/reports/mis` | 31-column table; filtering chrome |
-| 7 | Intake (staff side) | `/dashboard/intake` | QR generator; pending list |
-| 8 | Intake (patient side) | `/intake/[any-pending-token]` | Mobile-first patient form |
-
-Optional but useful:
-
-- **Login** (`/login`) — first impression
-- **Dashboard root** (`/dashboard`) — what each role lands on (capture as OWNER, FO, THERAPIST)
-
-## How to capture
-
-1. `npm run dev` — app at `http://localhost:3000`.
-2. Log in as `marazban@mbd.in` / `mbd2026` (Owner — sees everything).
-3. Use Chrome DevTools' device toolbar.
-4. Set viewport explicitly:
-   - **Desktop:** `1440 × 900` (DPR 1)
-   - **Mobile:** `375 × 812` (iPhone 13 Mini, DPR 2)
-5. Use the browser's **Capture full size screenshot** option (Cmd-Shift-P → "Capture full size screenshot"). Don't crop manually — Claude Design uses the full visible state.
-
-## Naming convention
-
-`{slug}-{viewport}.png`
-
-Examples:
-```
-invoice-new-desktop.png
-invoice-new-mobile.png
-clinical-record-desktop.png
-clinical-record-mobile.png
-calendar-desktop.png
-calendar-mobile.png
-assign-desktop.png
-assign-mobile.png
-patient-detail-desktop.png
-patient-detail-mobile.png
-mis-desktop.png
-mis-mobile.png
-intake-staff-desktop.png
-intake-staff-mobile.png
-intake-patient-desktop.png
-intake-patient-mobile.png
+```bash
+npm run dev
 ```
 
-## Checklist before uploading
+In another:
 
-- [ ] 8 screens × 2 viewports = 16 PNGs (or 10/20 if you grabbed login + dashboard)
-- [ ] No real PHI in shots — Demo Patient (`COL-MBD-DEMO`) is fine; if you tested with real names, redact first
-- [ ] No browser chrome (Chrome DevTools' full-page capture excludes it; if you used a different tool, crop the URL bar)
-- [ ] Filenames follow `{slug}-{viewport}.png`
+```bash
+npm run capture-screenshots
+```
 
-That's it. Upload all of `design/` to Claude Design and you're set.
+Writes 20 PNGs into this folder. Takes ~45 seconds. The script:
+
+1. Confirms `next dev` is reachable at `localhost:3000`
+2. Looks up the demo patient (`COL-MBD-DEMO`) via Prisma
+3. Mints a fresh `IntakeToken` for the public intake page
+4. Launches headless Chromium, authenticates once as `marazban@mbd.in` (Owner)
+5. Walks 10 screens × 2 viewports (desktop 1440×900, mobile 375×812)
+6. Cleans up the token and the auth state file
+
+## One-time setup (per machine)
+
+After `npm install`:
+
+```bash
+npx playwright install chromium
+```
+
+Downloads the headless Chromium binary (~110 MB) into `~/.cache/ms-playwright/`. Skip if Playwright is already installed.
+
+## When to regenerate
+
+- After any UI change that affects the captured screens
+- Before uploading the design bundle to claude.ai/design
+- Before any design review where stakeholders look at the bundle
+
+## What gets captured
+
+| Slug | URL | Why |
+|---|---|---|
+| `login` | `/login` | First impression; show/hide password toggle |
+| `dashboard-overview` | `/dashboard` | Role-aware landing as Owner |
+| `intake-staff` | `/dashboard/intake` | QR generator, pending list |
+| `assign` | `/dashboard/assign` | Multi-therapist picker + consent capture |
+| `patient-detail` | `/dashboard/patients/{demoId}` | Sticky header + sub-tabs |
+| `clinical-record` | `/dashboard/patients/{demoId}/clinical` | 80-field form; section nav candidate |
+| `calendar` | `/dashboard/calendar` | FullCalendar embed |
+| `invoice-new` | `/dashboard/billing/invoices/new` | Most complex form; inline promo preview |
+| `mis` | `/dashboard/reports/mis` | 31-column report |
+| `intake-patient` | `/intake/{freshToken}` | Mobile-first patient form (no auth) |
+
+Each gets two PNGs: `{slug}-desktop.png` and `{slug}-mobile.png`. Total: 20.
+
+## Files in this folder
+
+- `*.png` — the 20 captures, committed so the bundle is self-contained
+- This README
+
+Don't add hand-captured screenshots here — they'll be overwritten on the next `capture-screenshots` run. If you want a one-off shot, put it elsewhere.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Couldn't reach http://localhost:3000` | dev server isn't running | `npm run dev` in another terminal |
+| `Demo patient COL-MBD-DEMO not found` | DB hasn't been seeded | `npm run db:seed` |
+| `signin returned 500` | Stale Prisma client in `next dev` | Stop & restart `next dev` |
+| `Executable doesn't exist` (Playwright) | Browser binary not installed | `npx playwright install chromium` |
+| One PNG missing, others fine | The route's selector wasn't found inside the timeout | Re-run; if persistent, the page may have slow data loading — increase timeouts in `scripts/capture-screenshots.ts` |
