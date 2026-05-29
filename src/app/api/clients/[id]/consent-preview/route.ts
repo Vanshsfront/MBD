@@ -1,7 +1,8 @@
 // POST /api/clients/[id]/consent-preview — render the consent DOCX with a
 // transient signature embedded so the FO can review the document BEFORE
-// committing the signature to the database. Returns DOCX (or PDF when
-// ?format=pdf), but never writes to the DB.
+// committing the signature to the database. Returns the DOCX, but never
+// writes to the DB. (Server-side PDF conversion was removed — see
+// src/lib/templates/docx.ts — so any ?format=pdf param is ignored.)
 //
 // Body shape: { signatureDataUrl: "data:image/png;base64,...", method: "DIGITAL_PAD" | "PHYSICAL_SCAN" }
 //
@@ -11,7 +12,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/api-auth";
-import { renderDocxTemplate, convertDocxToPdf } from "@/lib/templates/docx";
+import { renderDocxTemplate } from "@/lib/templates/docx";
 import { CATEGORY_KEYS, type ServiceCategoryKey } from "@/lib/categories";
 
 interface AddressJson {
@@ -65,8 +66,6 @@ export async function POST(
     select: { signatureDataUrl: true },
   });
 
-  const url = new URL(req.url);
-  const format = url.searchParams.get("format") === "pdf" ? "pdf" : "docx";
 
   const intake = client.intakeForms[0] ?? null;
   const selected = parseSelectedCategories(intake?.selectedCategories ?? null);
@@ -117,21 +116,6 @@ export async function POST(
   };
 
   const docxBuf = await renderDocxTemplate("common-intake", data);
-
-  if (format === "pdf") {
-    try {
-      const pdf = await convertDocxToPdf(docxBuf);
-      return new NextResponse(new Uint8Array(pdf), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="consent-preview-${client.clientCode}.pdf"`,
-        },
-      });
-    } catch (err) {
-      console.error("[consent preview] PDF conversion failed; returning DOCX", err);
-    }
-  }
 
   return new NextResponse(new Uint8Array(docxBuf), {
     status: 200,

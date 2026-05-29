@@ -605,14 +605,14 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
 
   // Step 1: render the consent with the IN-MEMORY signature so the FO can
   // review BEFORE persisting. Does NOT save anything to the DB. The new
-  // tab gets a one-shot PDF/DOCX from /consent-preview.
+  // tab gets a one-shot DOCX from /consent-preview.
   async function preview() {
     const dataUrl = collectSignature();
     if (!dataUrl) return;
     setPending(true);
     try {
       const res = await fetch(
-        `/api/clients/${client.id}/consent-preview?format=pdf`,
+        `/api/clients/${client.id}/consent-preview`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

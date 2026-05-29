@@ -1,10 +1,10 @@
-// Render the COMMON_PATIENT_INTAKE_FORM with sample data and convert to PDF.
+// Render the COMMON_PATIENT_INTAKE_FORM with sample data.
 // Confirms placeholder injection didn't break the template structure.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import { renderDocxTemplate, convertDocxToPdf } from "../src/lib/templates/docx";
+import { renderDocxTemplate } from "../src/lib/templates/docx";
 
 const OUT = path.join(process.cwd(), "tmp", "smoke");
 
@@ -44,10 +44,7 @@ async function main() {
   const docx = await renderDocxTemplate("common-intake", data);
   await fs.writeFile(path.join(OUT, "consent-rendered.docx"), docx);
 
-  const pdf = await convertDocxToPdf(docx);
-  await fs.writeFile(path.join(OUT, "consent-rendered.pdf"), pdf);
-
-  console.log("[smoke-consent] wrote consent-rendered.docx + consent-rendered.pdf");
+  console.log("[smoke-consent] wrote consent-rendered.docx");
 }
 
 main().catch((err) => {

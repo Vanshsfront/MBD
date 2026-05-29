@@ -1,17 +1,19 @@
-// Render a saved Consultation to its templated DOCX/PDF.
+// Render a saved Consultation to its templated DOCX. (Server-side PDF
+// conversion was removed — see src/lib/templates/docx.ts — so the optional
+// ?format=pdf param is ignored and the DOCX is always returned.)
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/api-auth";
 import { hasPermission, isClinicalRole } from "@/lib/permissions";
-import { renderDocxTemplate, convertDocxToPdf } from "@/lib/templates/docx";
+import { renderDocxTemplate } from "@/lib/templates/docx";
 import {
   DOCX_TEMPLATES,
   type DocxTemplateKey,
 } from "@/lib/templates/keys";
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await requireAuth();
@@ -98,24 +100,6 @@ export async function GET(
   };
 
   const docxBuf = await renderDocxTemplate(templateKey, data);
-
-  const url = new URL(req.url);
-  if (url.searchParams.get("format") === "pdf") {
-    try {
-      const pdf = await convertDocxToPdf(docxBuf);
-      return new NextResponse(new Uint8Array(pdf), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="consultation-${consultation.client.clientCode}-${consultation.id.slice(-6)}.pdf"`,
-        },
-      });
-    } catch (err) {
-      // LibreOffice missing/crashed/timed out — never 500; fall back to the
-      // editable DOCX so the clinician still gets the document.
-      console.error("[consultation render] PDF conversion failed; returning DOCX", err);
-    }
-  }
 
   return new NextResponse(new Uint8Array(docxBuf), {
     status: 200,

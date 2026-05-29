@@ -17,7 +17,7 @@ import path from "node:path";
 import PizZip from "pizzip";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
-import { renderDocxTemplate, convertDocxToPdf } from "../src/lib/templates/docx";
+import { renderDocxTemplate } from "../src/lib/templates/docx";
 import { CLINICAL_SCHEMAS } from "../src/lib/clinical-schemas";
 
 const url = process.env.DATABASE_URL;
@@ -165,11 +165,7 @@ async function main(): Promise<void> {
   }
   console.log(`[smoke-clinical] all ${expected.length} expected strings present in rendered DOCX`);
 
-  const pdf = await convertDocxToPdf(docx);
-  await fs.writeFile(path.join(OUT, "phase4-physio-consult.pdf"), pdf);
-  console.log(
-    `[smoke-clinical] DOCX ${docx.byteLength} bytes, PDF ${pdf.byteLength} bytes`,
-  );
+  console.log(`[smoke-clinical] DOCX ${docx.byteLength} bytes`);
 
   // 7. Cleanup the test consultation.
   await prisma.consultation.delete({ where: { id: consultation.id } });

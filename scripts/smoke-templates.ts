@@ -21,7 +21,6 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 
 import { renderInvoice } from "../src/lib/templates/xlsx";
-import { convertDocxToPdf } from "../src/lib/templates/docx";
 
 const OUT = path.join(process.cwd(), "tmp", "smoke");
 
@@ -92,10 +91,6 @@ async function main() {
   console.log("[smoke] rendering sample template with data…");
   const rendered = await renderSampleDocx(tpl);
   await fs.writeFile(path.join(OUT, "sample-clinical.docx"), rendered);
-
-  console.log("[smoke] converting DOCX to PDF via LibreOffice…");
-  const pdf = await convertDocxToPdf(rendered);
-  await fs.writeFile(path.join(OUT, "sample-clinical.pdf"), pdf);
 
   console.log("[smoke] rendering Services invoice…");
   const services = await renderInvoice({

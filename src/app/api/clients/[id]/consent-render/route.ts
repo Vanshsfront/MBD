@@ -1,10 +1,11 @@
 // Render the COMMON PATIENT INTAKE FORM prefilled with the patient's data.
-// Returns DOCX by default, or PDF if ?format=pdf is passed (LibreOffice).
+// Returns the filled DOCX. (Server-side PDF conversion was removed — see
+// src/lib/templates/docx.ts — so the optional ?format=pdf param is ignored.)
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/api-auth";
-import { renderDocxTemplate, convertDocxToPdf } from "@/lib/templates/docx";
+import { renderDocxTemplate } from "@/lib/templates/docx";
 import { CATEGORY_KEYS, SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/lib/categories";
 
 interface AddressJson {
@@ -20,7 +21,7 @@ interface EmergencyJson {
 }
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await requirePermission("patients:assign_therapist");
@@ -46,9 +47,6 @@ export async function GET(
     where: { id: auth.user.id },
     select: { signatureDataUrl: true },
   });
-
-  const url = new URL(req.url);
-  const format = url.searchParams.get("format") === "pdf" ? "pdf" : "docx";
 
   const intake = client.intakeForms[0] ?? null;
   const selected = parseSelectedCategories(intake?.selectedCategories ?? null);
@@ -104,23 +102,6 @@ export async function GET(
   };
 
   const docxBuf = await renderDocxTemplate("common-intake", data);
-
-  if (format === "pdf") {
-    try {
-      const pdf = await convertDocxToPdf(docxBuf);
-      return new NextResponse(new Uint8Array(pdf), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="consent-${client.clientCode}.pdf"`,
-        },
-      });
-    } catch (err) {
-      // LibreOffice missing/crashed/timed out — never 500; fall back to the
-      // editable DOCX so the FO still gets the consent document.
-      console.error("[consent render] PDF conversion failed; returning DOCX", err);
-    }
-  }
 
   return new NextResponse(new Uint8Array(docxBuf), {
     status: 200,

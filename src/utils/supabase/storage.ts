@@ -3,21 +3,21 @@
 // care about who's signed in — it just stores under a deterministic path.
 //
 // Buckets referenced:
-//   - "files"             — generic FO uploads (consent scans, misc docs)
-//   - "clinical-records"  — versioned doctor write-ups, gated by signed URL
-//                          (created out-of-band when #12.7 needs it)
+//   - "files" — every server-side upload lives here: consent scans, intake
+//               attachments, and versioned clinical write-ups. Private bucket;
+//               downloads are gated behind short-lived signed URLs.
 //
-// Path convention: every consumer namespaces under its model:
+// Path convention: every consumer namespaces under its model, all inside the
+// single "files" bucket:
 //   files/consent-scans/{clientId}/{uuid}.{ext}
 //   files/intake-attachments/{clientId}/{uuid}.{ext}
-//   clinical-records/clinical/{consultationId}/{version}.docx
+//   files/clinical/{consultationId}/v{N}.{ext}
 // Keeping path opaque means downstream lookups don't depend on a brittle
 // filename — the storagePath is stored in Prisma and treated as the truth.
 
 import { createAdminClient } from "./admin";
 
 export const FILES_BUCKET = "files";
-export const CLINICAL_RECORDS_BUCKET = "clinical-records";
 
 export interface UploadResult {
   bucket: string;

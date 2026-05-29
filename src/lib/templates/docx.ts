@@ -1,14 +1,15 @@
 // MBD Clinic OS — DOCX template rendering (PRD §6.1).
 //
 // Loads a template DOCX from /templates, fills {{placeholder}} markers with
-// data via docxtemplater, and (optionally) shells out to LibreOffice for
-// PDF conversion.
+// data via docxtemplater, and returns the .docx bytes.
+//
+// NOTE: server-side PDF conversion (LibreOffice/soffice) was removed — it
+// cannot run on Vercel's serverless runtime. Documents are served as .docx.
+// To re-introduce PDF, add a converter that works off-Vercel (e.g. a
+// Gotenberg sidecar called over HTTP) rather than shelling out to soffice.
 
 import { promises as fs } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 // Image module: lets us embed PNG signatures via {{%signature}} placeholders.
@@ -16,8 +17,6 @@ import Docxtemplater from "docxtemplater";
 import ImageModule from "docxtemplater-image-module-free";
 
 import { DOCX_TEMPLATES, type DocxTemplateKey } from "@/lib/templates/keys";
-
-const execFileAsync = promisify(execFile);
 
 const TEMPLATES_ROOT = path.join(process.cwd(), "templates");
 
@@ -122,47 +121,4 @@ export async function renderDocxTemplate(
 
   const out = doc.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
   return out;
-}
-
-/**
- * Path to the LibreOffice binary. Honours `SOFFICE_BIN` env override; falls
- * back to `soffice` (works on macOS via Homebrew, and on most Linux distros).
- */
-function sofficeBinary(): string {
-  return process.env.SOFFICE_BIN ?? "soffice";
-}
-
-/**
- * Convert a DOCX buffer to a PDF buffer via LibreOffice headless. Writes the
- * input to a temp dir, shells out to soffice, reads the produced PDF, cleans
- * up. 30s timeout.
- */
-export async function convertDocxToPdf(docxBuf: Buffer): Promise<Buffer> {
-  const dir = await fs.mkdtemp(path.join(tmpdir(), "mbd-docx-"));
-  const inputPath = path.join(dir, "input.docx");
-  const outputPath = path.join(dir, "input.pdf");
-  try {
-    await fs.writeFile(inputPath, docxBuf);
-    await execFileAsync(
-      sofficeBinary(),
-      ["--headless", "--convert-to", "pdf", "--outdir", dir, inputPath],
-      { timeout: 30_000 },
-    );
-    const pdf = await fs.readFile(outputPath);
-    return pdf;
-  } finally {
-    // Best-effort cleanup. Do not let cleanup errors mask render errors.
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
-  }
-}
-
-/**
- * Render a DOCX template to a PDF in one shot.
- */
-export async function renderDocxTemplateAsPdf(
-  key: DocxTemplateKey,
-  data: Record<string, unknown>,
-): Promise<Buffer> {
-  const docx = await renderDocxTemplate(key, data);
-  return convertDocxToPdf(docx);
 }

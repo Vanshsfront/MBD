@@ -5,10 +5,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import {
-  renderDocxTemplate,
-  convertDocxToPdf,
-} from "../src/lib/templates/docx";
+import { renderDocxTemplate } from "../src/lib/templates/docx";
 import type { DocxTemplateKey } from "../src/lib/templates/keys";
 
 const OUT = path.join(process.cwd(), "tmp", "smoke");
@@ -202,7 +199,7 @@ async function renderAndSave(key: DocxTemplateKey, suffix: string) {
 async function main() {
   await fs.mkdir(OUT, { recursive: true });
 
-  const physio = await renderAndSave("physiotherapy-followup", "physio");
+  await renderAndSave("physiotherapy-followup", "physio");
   await renderAndSave("physician-followup", "physician");
   await renderAndSave("counselling-followup", "counselling");
   await renderAndSave("nutrition-followup", "nutrition");
@@ -212,22 +209,15 @@ async function main() {
   // First-visit consultations (Phase 1) — placeholders injected into the
   // client's original DOCX templates.
   await renderAndSave("physician", "physician-consult");
-  const physiotherapyConsult = await renderAndSave("physiotherapy", "physiotherapy-consult");
+  await renderAndSave("physiotherapy", "physiotherapy-consult");
 
   // New DOCX rebuilds of the PDF-only intake forms.
   await renderAndSave("yoga-intake", "yoga-intake");
   await renderAndSave("counselling-intake", "counselling-intake");
   await renderAndSave("fab", "fab");
 
-  const pdf = await convertDocxToPdf(physio);
-  await fs.writeFile(path.join(OUT, "followup-physio.pdf"), pdf);
-
-  // Convert one consultation template too — sanity check on signature embed.
-  const consultPdf = await convertDocxToPdf(physiotherapyConsult);
-  await fs.writeFile(path.join(OUT, "consultation-physiotherapy.pdf"), consultPdf);
-
   console.log(
-    "[smoke-followups] 6 follow-ups + 2 first-visit consultations + 3 intake rebuilds rendered; 2 PDFs.",
+    "[smoke-followups] 6 follow-ups + 2 first-visit consultations + 3 intake rebuilds rendered.",
   );
 }
 

@@ -406,11 +406,11 @@ export function ClinicalShell({
             {activeId ? (
               <Button asChild variant="outline" size="sm">
                 <a
-                  href={`/api/consultations/${activeId}/render?format=pdf`}
+                  href={`/api/consultations/${activeId}/render`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Open PDF
+                  Open DOCX
                 </a>
               </Button>
             ) : null}
@@ -512,12 +512,12 @@ export function ClinicalShell({
                         {c.status}
                       </Badge>
                       <a
-                        href={`/api/consultations/${c.id}/render?format=pdf`}
+                        href={`/api/consultations/${c.id}/render`}
                         target="_blank"
                         rel="noreferrer"
                         className="text-primary hover:underline"
                       >
-                        PDF
+                        DOCX
                       </a>
                     </span>
                   </li>

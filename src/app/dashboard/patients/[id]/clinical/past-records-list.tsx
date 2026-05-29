@@ -77,12 +77,12 @@ export function PastRecordsList({ clientId, consentSigned, consultations }: Prop
                   </p>
                 </div>
                 <a
-                  href={`/api/clients/${clientId}/consent-render?format=pdf`}
+                  href={`/api/clients/${clientId}/consent-render`}
                   target="_blank"
                   rel="noreferrer"
                   className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent"
                 >
-                  Download PDF
+                  Download DOCX
                 </a>
               </li>
             ) : null}
@@ -108,12 +108,12 @@ export function PastRecordsList({ clientId, consentSigned, consultations }: Prop
                     </p>
                   </div>
                   <a
-                    href={`/api/consultations/${c.id}/render?format=pdf`}
+                    href={`/api/consultations/${c.id}/render`}
                     target="_blank"
                     rel="noreferrer"
                     className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent"
                   >
-                    System-rendered PDF
+                    System-rendered DOCX
                   </a>
                 </div>
                 <ConsultationAttachments
