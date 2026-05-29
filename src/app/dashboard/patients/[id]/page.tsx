@@ -214,7 +214,7 @@ export default async function PatientOverview({
                     {formatApptTime(a.startTime)}
                   </span>
                   <span className="min-w-0 flex-1 text-sm">
-                    {a.service.name}
+                    {a.service?.name ?? "Service TBD"}
                     <span className="text-muted-foreground"> · {a.therapist.name}</span>
                   </span>
                   <Badge variant={a.status === "CONFIRMED" ? "success" : "warning"}>

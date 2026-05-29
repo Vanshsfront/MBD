@@ -8,11 +8,16 @@ import { requirePermission, requireAuth, requestMeta } from "@/lib/api-auth";
 import { createAuditLog, computeChanges } from "@/lib/audit";
 import { isClinicalRole } from "@/lib/permissions";
 import { validateAppointmentTiming, ADJACENCY_WINDOW_MINUTES } from "@/lib/appointments";
+import { staffColor } from "@/lib/staff-colors";
 
 const createSchema = z.object({
   clientId: z.string().min(1),
   therapistId: z.string().min(1),
-  serviceId: z.string().min(1),
+  // Optional: Front Office books the slot without committing to a service —
+  // the assigned therapist sets it later. Other roles supply it at booking.
+  // When omitted, package consumption is not possible at booking time and
+  // any consumeFromPackageId will 400 (we can't match the mix entry).
+  serviceId: z.string().min(1).optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   notes: z.string().max(500).optional(),
@@ -163,6 +168,10 @@ export async function POST(req: Request) {
       let consumedPackage: { id: string; completedSessions: number } | null = null;
 
       if (f.consumeFromPackageId) {
+        // FO-defers-service path: serviceId is optional in the booking body,
+        // but package consumption needs it to find the right mix entry —
+        // otherwise we'd silently double-count. Reject loudly.
+        if (!f.serviceId) throw new Error("package_requires_service");
         const pkg = await tx.package.findUnique({
           where: { id: f.consumeFromPackageId },
           select: {
@@ -229,7 +238,7 @@ export async function POST(req: Request) {
         data: {
           clientId: f.clientId,
           therapistId: f.therapistId,
-          serviceId: f.serviceId,
+          serviceId: f.serviceId ?? null,
           centreId: client.centreId,
           startTime: start,
           endTime: end,
@@ -246,6 +255,7 @@ export async function POST(req: Request) {
       "package_not_found",
       "package_inactive",
       "package_out_of_range",
+      "package_requires_service",
       "package_service_mismatch",
       "package_exhausted_for_service",
     ]);
@@ -286,7 +296,7 @@ export async function POST(req: Request) {
     metadata: {
       clientId: f.clientId,
       therapistId: f.therapistId,
-      serviceId: f.serviceId,
+      serviceId: f.serviceId ?? null,
       ...(consumedPackage
         ? {
             packageId: consumedPackage.id,
@@ -417,13 +427,14 @@ export async function GET(req: Request) {
           id: true,
           firstName: true,
           lastName: true,
+          clientCode: true,
           flags: {
             where: { isActive: true },
             select: { type: true, label: true, color: true },
           },
         },
       },
-      therapist: { select: { id: true, name: true } },
+      therapist: { select: { id: true, name: true, color: true } },
       service: { select: { id: true, name: true, basePrice: true, departmentId: true } },
     },
   });
@@ -453,15 +464,20 @@ export async function GET(req: Request) {
   return NextResponse.json(
     appointments.map((a) => ({
       id: a.id,
-      title: `${a.client.firstName} ${a.client.lastName} — ${a.service.name}`,
+      title: `${a.client.firstName} ${a.client.lastName} — ${a.service?.name ?? "Service TBD"}`,
       start: a.startTime.toISOString(),
       end: a.endTime.toISOString(),
       status: a.status,
       therapistId: a.therapist.id,
       therapistName: a.therapist.name,
+      // Calendar tints events by therapist; null override → deterministic
+      // palette colour derived from the therapist id (resolved client-side
+      // via staffColor() so the same person always renders the same hue).
+      therapistColor: staffColor(a.therapist.id, a.therapist.color),
       clientId: a.client.id,
-      serviceId: a.service.id,
-      serviceName: a.service.name,
+      clientCode: a.client.clientCode,
+      serviceId: a.service?.id ?? "",
+      serviceName: a.service?.name ?? "",
       flags: a.client.flags ?? [],
       hasClash: clashedIds.has(a.id),
       pendingReschedule: pendingApptIds.has(a.id),
@@ -501,7 +517,7 @@ interface PrismaAppointment {
   status: string;
   clientId: string;
   therapistId: string;
-  serviceId: string;
+  serviceId: string | null;
 }
 
 function serialise(a: PrismaAppointment) {

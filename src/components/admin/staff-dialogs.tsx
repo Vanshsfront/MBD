@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { readApiError } from "@/lib/error-messages";
 import type { Role } from "@/lib/permissions";
+import { STAFF_COLOR_PALETTE, staffColor, readableTextColor } from "@/lib/staff-colors";
 import { RolePermissionsPreview } from "./role-permissions-preview";
 
 export interface StaffLite {
@@ -38,6 +39,7 @@ export interface StaffLite {
   designation: string | null;
   isActive: boolean;
   departmentId: string | null;
+  color?: string | null;
   department?: { id: string; name: string } | null;
 }
 export interface DepartmentLite {
@@ -65,6 +67,55 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {label}
       </Label>
       {children}
+    </div>
+  );
+}
+
+// Calendar colour picker. `value` is an explicit hex or "" (auto). When
+// auto, the preview shows the deterministic fallback derived from the staff
+// id (or the first palette colour for brand-new staff with no id yet).
+function ColorPicker({
+  value,
+  onChange,
+  previewId,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  previewId?: string;
+}) {
+  const autoColor = staffColor(previewId ?? "new", null);
+  const isAuto = !value;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange("")}
+        title="Auto — derived from the staff member"
+        className={`flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium ${
+          isAuto ? "border-[color:var(--primary)] ring-2 ring-[color:var(--primary)]/30" : "border-[color:var(--border)]"
+        }`}
+        style={{ backgroundColor: autoColor, color: readableTextColor(autoColor) }}
+      >
+        Auto
+      </button>
+      {STAFF_COLOR_PALETTE.map((c) => {
+        const selected = value.toLowerCase() === c.toLowerCase();
+        return (
+          <button
+            key={c}
+            type="button"
+            onClick={() => onChange(c)}
+            title={c}
+            aria-label={`Colour ${c}`}
+            className={`h-7 w-7 rounded-md border transition ${
+              selected
+                ? "border-[color:var(--primary)] ring-2 ring-[color:var(--primary)]/40"
+                : "border-[color:var(--border)] hover:scale-105"
+            }`}
+            style={{ backgroundColor: c }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -97,6 +148,7 @@ export function AddStaffDialog({
     role: initialRole,
     departmentId: defaultDepartmentId ?? "",
     designation: "",
+    color: "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -114,6 +166,7 @@ export function AddStaffDialog({
           name: form.name,
           email: form.email,
           password: form.password,
+          color: form.color || null,
           role: form.role,
           departmentId: form.departmentId || null,
           designation: form.designation || null,
@@ -178,6 +231,9 @@ export function AddStaffDialog({
           <Field label="Designation / title">
             <Input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Senior Physiotherapist" />
           </Field>
+          <Field label="Calendar colour">
+            <ColorPicker value={form.color} onChange={(v) => setForm({ ...form, color: v })} />
+          </Field>
           <RolePermissionsPreview role={form.role as Role} />
         </div>
         <DialogFooter>
@@ -208,6 +264,7 @@ export function EditStaffDialog({
     role: staff.role,
     departmentId: staff.departmentId ?? "",
     designation: staff.designation ?? "",
+    color: staff.color ?? "",
     isActive: staff.isActive,
     newPassword: "",
   });
@@ -230,6 +287,7 @@ export function EditStaffDialog({
           role: form.role,
           departmentId: form.departmentId || null,
           designation: form.designation || null,
+          color: form.color || null,
           isActive: form.isActive,
           resetPassword: form.newPassword || undefined,
         }),
@@ -311,6 +369,13 @@ export function EditStaffDialog({
           </div>
           <Field label="Designation / title">
             <Input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Senior Physiotherapist" />
+          </Field>
+          <Field label="Calendar colour">
+            <ColorPicker
+              value={form.color}
+              onChange={(v) => setForm({ ...form, color: v })}
+              previewId={staff.id}
+            />
           </Field>
           <Field label="Reset password (optional)">
             <Input

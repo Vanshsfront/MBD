@@ -179,6 +179,7 @@ model Staff {
   role             String  @default("THERAPIST") // OWNER|ADMIN|FRONT_OFFICE|CONSULTANT|THERAPIST|DEV
   designation      String?
   isActive         Boolean @default(true)
+  color            String? // hex (#RRGGBB) calendar colour; null falls back to a deterministic palette colour derived from id
   signatureDataUrl String? // PNG base64 — used to auto-stamp signature on PDFs
 
   departmentId String?
@@ -542,8 +543,12 @@ model Appointment {
   therapistId String
   therapist   Staff  @relation("TherapistAppointments", fields: [therapistId], references: [id])
 
-  serviceId String
-  service   Service @relation(fields: [serviceId], references: [id])
+  // Nullable: Front Office books the slot (patient + therapist + time); the
+  // assigned therapist sets the actual billable service later. Other roles
+  // still pick it at booking time. Anywhere this is read in the UI, treat
+  // the null case as "Service TBD".
+  serviceId String?
+  service   Service? @relation(fields: [serviceId], references: [id])
 
   centreId String?
   centre   Centre? @relation(fields: [centreId], references: [id])

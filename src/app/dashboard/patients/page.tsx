@@ -209,7 +209,11 @@ export default async function PatientsPage({
                               {c.firstName} {c.lastName}
                             </span>
                             <span className="block text-[11px] text-[color:var(--text-tertiary)]">
-                              {c.age != null ? `${c.age}${c.sex ?? ""} · ` : ""}
+                              {c.age != null ? <span>{c.age} </span> : null}
+                              {c.sex ? (
+                                <span className={sexColor(c.sex)}>{c.sex}</span>
+                              ) : null}
+                              {(c.age != null || c.sex) && c.phone ? " · " : ""}
                               {c.phone}
                             </span>
                           </span>
@@ -274,4 +278,12 @@ function formatApptDate(d: Date): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+// Gender colour cue (vansh): M → blue, F → pink, anything else stays muted.
+function sexColor(sex: string): string {
+  const s = sex.trim().toUpperCase();
+  if (s === "M") return "font-medium text-blue-600";
+  if (s === "F") return "font-medium text-pink-600";
+  return "";
 }

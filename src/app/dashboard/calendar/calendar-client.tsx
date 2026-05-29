@@ -11,14 +11,18 @@ import type {
   EventApi,
   EventChangeArg,
   EventClickArg,
+  EventContentArg,
+  EventMountArg,
 } from "@fullcalendar/core";
 import { toast } from "sonner";
-import { Star } from "lucide-react";
+import { Star, Check, ChevronsUpDown, Search } from "lucide-react";
+import { Command } from "cmdk";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -28,10 +32,16 @@ import {
 } from "@/components/ui/select";
 import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
+import { readableTextColor } from "@/lib/staff-colors";
+
+// How many therapist colours the legend shows before "Show all".
+const LEGEND_COLLAPSED_COUNT = 6;
 
 interface TherapistOption {
   id: string;
   name: string;
+  // Already resolved server-side via staffColor() — guaranteed hex.
+  color: string;
   departmentId: string | null;
   department: string | null;
 }
@@ -46,7 +56,9 @@ interface ServiceOption {
 
 interface ClientOption {
   id: string;
-  label: string;
+  name: string;
+  clientCode: string;
+  phone: string;
   therapistIds: string[];
 }
 
@@ -58,7 +70,9 @@ interface AppointmentEvent {
   status: string;
   therapistId: string;
   therapistName: string;
+  therapistColor: string;
   clientId: string;
+  clientCode: string;
   serviceId: string;
   serviceName: string;
   flags: ReadonlyArray<{ type: string; label: string; color: string | null }>;
@@ -70,6 +84,8 @@ interface Props {
   currentUserId: string;
   isClinicalRole: boolean;
   canBook: boolean;
+  /** False for Front Office — they book the slot, the therapist sets the service later. */
+  canAssignService: boolean;
   therapists: TherapistOption[];
   services: ServiceOption[];
   clients: ClientOption[];
@@ -79,6 +95,7 @@ export function CalendarClient({
   currentUserId,
   isClinicalRole,
   canBook,
+  canAssignService,
   therapists,
   services,
   clients,
@@ -89,13 +106,25 @@ export function CalendarClient({
   );
   const [creating, setCreating] = useState<{ start: string; end: string } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<AppointmentEvent | null>(null);
+  const [legendExpanded, setLegendExpanded] = useState(false);
 
   function fetchEvents(start: Date, end: Date) {
     const params = new URLSearchParams({ from: start.toISOString(), to: end.toISOString() });
     if (therapistFilter && !isClinicalRole) params.set("therapistId", therapistFilter);
     return fetch(`/api/appointments?${params.toString()}`)
       .then((r) => r.json())
-      .then((rows: AppointmentEvent[]) => rows);
+      .then((rows: AppointmentEvent[]) =>
+        // Colour each event by its therapist; a white border keeps adjacent
+        // (overlapping) events visually separated. Status is layered on via
+        // eventClassNames (cancelled = struck-through, completed = faded);
+        // clash + pending-reschedule rings are layered on top of that.
+        rows.map((r) => ({
+          ...r,
+          backgroundColor: r.therapistColor,
+          borderColor: "#ffffff",
+          textColor: readableTextColor(r.therapistColor),
+        })),
+      );
   }
 
   // Refresh on filter change.
@@ -175,14 +204,17 @@ export function CalendarClient({
                 value={therapistFilter === "" ? SELECT_NONE : therapistFilter}
                 onValueChange={(v) => setTherapistFilter(v === SELECT_NONE ? "" : v)}
               >
-                <SelectTrigger id="therapist-filter" className="w-48">
+                <SelectTrigger id="therapist-filter" className="w-52">
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={SELECT_NONE}>All</SelectItem>
+                  <SelectItem value={SELECT_NONE}>All therapists</SelectItem>
                   {therapists.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.name}
+                      <span className="flex items-center gap-2">
+                        <ColorDot color={t.color} />
+                        {t.name}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -197,22 +229,53 @@ export function CalendarClient({
         </div>
       </header>
 
-      {/* Legend strip — colour cue cards for status. Sits between the page
-        * header and the calendar canvas; matches the legend in the design
-        * handoff (audit n=4). The Therapist filter above stays as the
-        * primary cut; this strip just explains the colour story below. */}
+      {/* Status legend — explains the modifiers that ride on top of the
+        * per-therapist colour (events themselves are tinted by therapist,
+        * not status). Status modifiers: ✓ Completed (faded), strikethrough
+        * Cancelled (heavily faded), red ring Conflict, orange ring pending
+        * Reschedule. Pairs with the therapist colour legend below. */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl bg-card/60 px-4 py-2.5 text-xs text-[color:var(--text-secondary)] ring-1 ring-[color:var(--border-light)]">
         <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-tertiary)]">
-          Legend
+          Status
         </span>
-        <LegendDot color="var(--chart-1)" label="Confirmed" />
-        <LegendDot color="var(--chart-3)" label="Completed" />
-        <LegendDot color="var(--text-tertiary)" label="Cancelled / no-show" />
-        <LegendDot color="var(--danger)" label="Conflict" />
+        <span className="inline-flex items-center gap-1">✓ Completed</span>
+        <span className="inline-flex items-center gap-1"><span className="line-through">Cancelled</span></span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded ring-2 ring-[color:var(--danger)]" /> Clash
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded ring-2 ring-[#d97706]" /> Pending reschedule
+        </span>
         <span className="ml-auto text-[11px] text-[color:var(--text-tertiary)]">
           Drag an event to reschedule · click for details
         </span>
       </div>
+
+      {/* Therapist colour legend so the therapist→colour mapping is readable
+        * at a glance. Collapsed to a handful by default — the full list is
+        * long. Hidden for clinical roles since they only see their own day. */}
+      {!isClinicalRole && therapists.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-tertiary)]">
+            Therapists
+          </span>
+          {(legendExpanded ? therapists : therapists.slice(0, LEGEND_COLLAPSED_COUNT)).map((t) => (
+            <span key={t.id} className="flex items-center gap-1.5">
+              <ColorDot color={t.color} />
+              {t.name}
+            </span>
+          ))}
+          {therapists.length > LEGEND_COLLAPSED_COUNT ? (
+            <button
+              type="button"
+              onClick={() => setLegendExpanded((v) => !v)}
+              className="font-medium text-primary hover:underline"
+            >
+              {legendExpanded ? "Show less" : `Show all (${therapists.length})`}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <Card>
         <CardContent className="p-2">
@@ -225,10 +288,14 @@ export function CalendarClient({
               center: "title",
               right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
             }}
+            height="auto"
             slotMinTime="07:00:00"
             slotMaxTime="22:00:00"
+            slotEventOverlap={false}
+            expandRows
             allDaySlot={false}
             nowIndicator
+            dayMaxEvents
             selectable={canBook}
             selectMirror
             editable={canBook}
@@ -242,33 +309,15 @@ export function CalendarClient({
             }}
             eventClassNames={(arg) => {
               const status = (arg.event.extendedProps.status as string) ?? "CONFIRMED";
-              const classes: string[] = [];
+              const classes = ["mbd-evt"];
               if (status === "CANCELLED" || status === "NO_SHOW") classes.push("mbd-evt-cancelled");
               else if (status === "COMPLETED") classes.push("mbd-evt-completed");
-              else classes.push("mbd-evt-confirmed");
               if (arg.event.extendedProps.hasClash) classes.push("mbd-evt-clash");
               if (arg.event.extendedProps.pendingReschedule) classes.push("mbd-evt-pending-rsch");
               return classes;
             }}
-            eventContent={(arg) => {
-              const flags = (arg.event.extendedProps.flags as ReadonlyArray<{ type: string; label: string }>) ?? [];
-              const hasClash = Boolean(arg.event.extendedProps.hasClash);
-              const pendingRsch = Boolean(arg.event.extendedProps.pendingReschedule);
-              // Tiny inline pills: ⚠ for clash, ⟲ for pending reschedule,
-              // first flag label as a chip. Tooltip carries the full list.
-              const flagTitle = flags.length > 0 ? flags.map((f) => `${f.type}: ${f.label}`).join(" · ") : "";
-              return {
-                html: `<div class="text-xs px-1 leading-tight" title="${escapeHtml(flagTitle)}">
-  <div class="font-medium truncate">${escapeHtml(arg.event.title)}</div>
-  <div class="opacity-80 truncate">${escapeHtml(arg.event.extendedProps.therapistName as string ?? "")}</div>
-  <div class="flex gap-1 mt-0.5">
-    ${hasClash ? '<span class="mbd-evt-pill mbd-evt-pill-danger">⚠ clash</span>' : ""}
-    ${pendingRsch ? '<span class="mbd-evt-pill mbd-evt-pill-warning">⟲ resch.</span>' : ""}
-    ${flags.slice(0, 2).map((f) => `<span class="mbd-evt-pill" title="${escapeHtml(f.type)}">${escapeHtml(f.label)}</span>`).join("")}
-  </div>
-</div>`,
-              };
-            }}
+            eventContent={renderEventContent}
+            eventDidMount={attachHoverTitle}
           />
         </CardContent>
       </Card>
@@ -279,6 +328,7 @@ export function CalendarClient({
         <CreateAppointmentDialog
           start={creating.start}
           end={creating.end}
+          canAssignService={canAssignService}
           therapists={therapists}
           services={services}
           clients={clients}
@@ -312,7 +362,9 @@ function eventToView(e: EventApi): AppointmentEvent {
     status: (e.extendedProps.status as string) ?? "CONFIRMED",
     therapistId: (e.extendedProps.therapistId as string) ?? "",
     therapistName: (e.extendedProps.therapistName as string) ?? "",
+    therapistColor: (e.extendedProps.therapistColor as string) ?? "#2a7db8",
     clientId: (e.extendedProps.clientId as string) ?? "",
+    clientCode: (e.extendedProps.clientCode as string) ?? "",
     serviceId: (e.extendedProps.serviceId as string) ?? "",
     serviceName: (e.extendedProps.serviceName as string) ?? "",
     flags:
@@ -324,6 +376,71 @@ function eventToView(e: EventApi): AppointmentEvent {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+}
+
+// Tiny coloured dot — used in the therapist filter dropdown + create-dialog
+// therapist Select + legend. Matches vansh's pattern for visual consistency.
+function ColorDot({ color }: { color: string }) {
+  return (
+    <span
+      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/10"
+      style={{ backgroundColor: color }}
+    />
+  );
+}
+
+// Patient name (+ service) on the first line, therapist on the second. A ✓
+// marks completed appointments. Inline pill row carries clash/resch/flags
+// from my session work — the status modifiers live in the wrapper class.
+function renderEventContent(arg: EventContentArg) {
+  const status = (arg.event.extendedProps.status as string) ?? "CONFIRMED";
+  const therapistName = (arg.event.extendedProps.therapistName as string) ?? "";
+  const flags =
+    (arg.event.extendedProps.flags as ReadonlyArray<{ type: string; label: string }>) ?? [];
+  const hasClash = Boolean(arg.event.extendedProps.hasClash);
+  const pendingRsch = Boolean(arg.event.extendedProps.pendingReschedule);
+  const tick = status === "COMPLETED" ? "✓ " : "";
+  return {
+    html: `<div class="mbd-evt-body">
+  <div class="mbd-evt-title">${tick}${escapeHtml(arg.event.title)}</div>
+  <div class="mbd-evt-sub">${escapeHtml(therapistName)}</div>
+  ${hasClash || pendingRsch || flags.length > 0
+    ? `<div class="mbd-evt-pills">
+    ${hasClash ? '<span class="mbd-evt-pill mbd-evt-pill-danger">⚠ clash</span>' : ""}
+    ${pendingRsch ? '<span class="mbd-evt-pill mbd-evt-pill-warning">⟲ resch.</span>' : ""}
+    ${flags
+      .slice(0, 2)
+      .map(
+        (f) =>
+          `<span class="mbd-evt-pill" title="${escapeHtml(f.type)}">${escapeHtml(f.label)}</span>`,
+      )
+      .join("")}
+  </div>`
+    : ""}
+</div>`,
+  };
+}
+
+// Native tooltip on hover reveals the patient code (the "ID") plus context
+// and any flags. Beats trying to cram everything into the event card.
+function attachHoverTitle(arg: EventMountArg) {
+  const code = (arg.event.extendedProps.clientCode as string) ?? "";
+  const service = (arg.event.extendedProps.serviceName as string) || "Service TBD";
+  const therapist = (arg.event.extendedProps.therapistName as string) ?? "";
+  const flags =
+    (arg.event.extendedProps.flags as ReadonlyArray<{ type: string; label: string }>) ?? [];
+  arg.el.setAttribute(
+    "title",
+    [
+      arg.event.title,
+      code && `ID: ${code}`,
+      `Service: ${service}`,
+      therapist && `Therapist: ${therapist}`,
+      flags.length > 0 && `Flags: ${flags.map((f) => `${f.type}:${f.label}`).join(", ")}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
 }
 
 function CalendarStyles() {
@@ -368,30 +485,75 @@ function CalendarStyles() {
         background: var(--primary);
         color: var(--primary-foreground);
       }
-      .mbd-evt-confirmed {
-        background: var(--primary);
-        border-color: var(--primary);
-        color: var(--primary-foreground);
+      .fc .fc-toolbar.fc-header-toolbar {
+        margin-bottom: 1rem;
       }
-      .mbd-evt-completed {
-        background: oklch(0.7 0.12 150);
-        border-color: oklch(0.65 0.12 150);
-        color: white;
+      /* Roomier time grid so events have breathing space. */
+      .fc .fc-timegrid-slot {
+        height: 2.6em;
       }
-      .mbd-evt-cancelled {
-        background: oklch(0.85 0.05 30);
-        border-color: oklch(0.78 0.07 30);
-        color: oklch(0.3 0.1 30);
-        opacity: 0.7;
+      .fc .fc-timegrid-axis-cushion,
+      .fc .fc-timegrid-slot-label-cushion {
+        font-size: 11px;
+        color: var(--text-tertiary);
+      }
+      /* Event card: rounded, padded, soft shadow, white separating border so
+         side-by-side (overlapping) events never blur together. Background +
+         text colour come from per-event JSON (therapistColor + WCAG pick). */
+      .fc .mbd-evt {
+        border-radius: 7px;
+        border-width: 1.5px;
+        padding: 0;
+        box-shadow: 0 1px 3px rgba(26, 26, 30, 0.18);
+        overflow: hidden;
+      }
+      .fc .fc-timegrid-event {
+        margin-right: 1px;
+      }
+      .mbd-evt-body {
+        padding: 2px 5px;
+        line-height: 1.2;
+      }
+      .mbd-evt-title {
+        font-size: 11.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mbd-evt-sub {
+        font-size: 10.5px;
+        opacity: 0.85;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mbd-evt-pills {
+        display: flex;
+        gap: 2px;
+        margin-top: 1px;
+        flex-wrap: wrap;
+      }
+      .fc .mbd-evt-completed {
+        opacity: 0.78;
+      }
+      .fc .mbd-evt-cancelled {
+        opacity: 0.5;
+      }
+      .fc .mbd-evt-cancelled .mbd-evt-title {
         text-decoration: line-through;
       }
-      /* Clash + pending-reschedule decorations stack on top of the status
-       * colour. Clash wins visually (red ring) because it's blocking. */
-      .mbd-evt-clash {
+      /* List view rows pick up the same therapist dot colour. */
+      .fc .fc-list-event-dot {
+        border-color: currentColor;
+      }
+      /* Clash + pending-reschedule rings layered on top of the per-therapist
+       * tint. Clash wins visually (red) because it's blocking. */
+      .fc .mbd-evt-clash {
         box-shadow: 0 0 0 2px var(--danger), 0 2px 6px rgba(220,53,69,0.25);
       }
-      .mbd-evt-pending-rsch:not(.mbd-evt-clash) {
-        box-shadow: 0 0 0 2px var(--warning, #d97706), 0 2px 6px rgba(217,119,6,0.20);
+      .fc .mbd-evt-pending-rsch:not(.mbd-evt-clash) {
+        box-shadow: 0 0 0 2px #d97706, 0 2px 6px rgba(217,119,6,0.20);
       }
       /* Inline pills inside the event body. Kept small and uppercase so
        * they read as labels, not text. */
@@ -445,6 +607,7 @@ interface ActivePackage {
 function CreateAppointmentDialog({
   start,
   end,
+  canAssignService,
   therapists,
   services,
   clients,
@@ -452,6 +615,7 @@ function CreateAppointmentDialog({
 }: {
   start: string;
   end: string;
+  canAssignService: boolean;
   therapists: TherapistOption[];
   services: ServiceOption[];
   clients: ClientOption[];
@@ -561,8 +725,12 @@ function CreateAppointmentDialog({
   }, [therapistId, therapists]);
 
   async function submit() {
-    if (!clientId || !therapistId || !serviceId) {
-      toast.error("Patient, therapist, and service are all required");
+    if (!clientId || !therapistId) {
+      toast.error("Patient and therapist are required");
+      return;
+    }
+    if (canAssignService && !serviceId) {
+      toast.error("Select a service");
       return;
     }
     // Compose start/end from the local input + duration spinner.
@@ -588,7 +756,7 @@ function CreateAppointmentDialog({
         body: JSON.stringify({
           clientId,
           therapistId,
-          serviceId,
+          serviceId: serviceId || undefined,
           startTime: startDate.toISOString(),
           endTime: endDate.toISOString(),
           notes: notes.trim() || undefined,
@@ -650,48 +818,45 @@ function CreateAppointmentDialog({
             </div>
           </div>
 
-          {/* Patient picker */}
+          {/* Patient picker — searchable by name, code, or phone. Lifted
+            * verbatim from vansh's PatientCombobox so a 200-client centre
+            * can find their patient in a couple of keystrokes. */}
           <div className="space-y-1.5">
             <Label>Patient</Label>
-            <Select value={clientId} onValueChange={setClientId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select…" />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PatientCombobox clients={clients} value={clientId} onChange={setClientId} />
           </div>
 
-          {/* Top-3 therapists chip row */}
+          {/* Top-3 therapists chip row — most-frequent historical pairings
+            * for this patient, surfaced from the top-therapists endpoint. */}
           {clientId && topTherapists.length > 0 ? (
             <div className="space-y-1.5">
               <Label className="text-xs">Top therapists for this patient</Label>
               <div className="flex flex-wrap gap-2">
-                {topTherapists.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTherapistId(t.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
-                      therapistId === t.id
-                        ? "border-[color:var(--primary)] bg-[rgba(42,125,184,0.08)] font-semibold text-[color:var(--primary)]"
-                        : "border-[color:var(--border-light)] bg-card hover:bg-secondary"
-                    }`}
-                  >
-                    <Star className="h-3 w-3" aria-hidden /> {t.name}
-                    <span className="text-[color:var(--text-tertiary)]">· {t.visits} visits</span>
-                  </button>
-                ))}
+                {topTherapists.map((t) => {
+                  const therapistMeta = therapists.find((x) => x.id === t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTherapistId(t.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
+                        therapistId === t.id
+                          ? "border-[color:var(--primary)] bg-[rgba(42,125,184,0.08)] font-semibold text-[color:var(--primary)]"
+                          : "border-[color:var(--border-light)] bg-card hover:bg-secondary"
+                      }`}
+                    >
+                      {therapistMeta ? <ColorDot color={therapistMeta.color} /> : <Star className="h-3 w-3" aria-hidden />}
+                      {t.name}
+                      <span className="text-[color:var(--text-tertiary)]">· {t.visits} visits</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}
 
-          {/* Therapist picker */}
+          {/* Therapist picker — coloured dots per row so the calendar tint
+            * preview matches the row a person picks. */}
           <div className="space-y-1.5">
             <Label>Therapist</Label>
             <Select value={therapistId} onValueChange={setTherapistId}>
@@ -701,7 +866,13 @@ function CreateAppointmentDialog({
               <SelectContent>
                 {therapists.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.name} {t.department ? `· ${t.department}` : ""}
+                    <span className="flex items-center gap-2">
+                      <ColorDot color={t.color} />
+                      {t.name}
+                      {t.department ? (
+                        <span className="text-[color:var(--text-tertiary)]">· {t.department}</span>
+                      ) : null}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -712,7 +883,7 @@ function CreateAppointmentDialog({
           {therapistId && !therapistAlreadyOnPlan ? (
             <div className="rounded-lg border border-[color:var(--border-light)] bg-secondary p-3 text-sm">
               <p className="mb-2 font-medium">
-                Add this therapist to {clients.find((c) => c.id === clientId)?.label}&apos;s care plan?
+                Add this therapist to {clients.find((c) => c.id === clientId)?.name ?? "this patient"}&apos;s care plan?
               </p>
               <div className="flex gap-2">
                 <Button
@@ -735,7 +906,10 @@ function CreateAppointmentDialog({
             </div>
           ) : null}
 
-          {/* Service picker — accordion by department */}
+          {/* Service picker — accordion by department. Hidden for Front
+            * Office (canAssignService = false) per the FO-defers-service
+            * flow; the therapist sets it later during the consultation. */}
+          {canAssignService ? (
           <div className="space-y-1.5">
             <Label>Service</Label>
             <div className="space-y-2">
@@ -784,9 +958,15 @@ function CreateAppointmentDialog({
               })}
             </div>
           </div>
+          ) : (
+            <p className="rounded-md border border-[color:var(--border-light)] bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+              The assigned therapist will set the service for this appointment.
+            </p>
+          )}
 
-          {/* Package consumption prompt */}
-          {serviceId && activePackages.length > 0 ? (
+          {/* Package consumption prompt — only firable when serviceId is
+            * set, so naturally inert in the FO-defers-service path. */}
+          {canAssignService && serviceId && activePackages.length > 0 ? (
             <div className="rounded-lg border border-[color:var(--border-light)] bg-[rgba(42,125,184,0.04)] p-3 text-sm">
               <p className="mb-2 font-medium">
                 Use 1 session of this service from an active package?
@@ -987,15 +1167,77 @@ function EventDetailDialog({
   );
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
+// Searchable patient picker — shows only the name in the trigger, but
+// matches on name + clientCode + phone. Lifted from vansh's commit; better
+// than a plain Select once the centre has more than a couple dozen patients.
+function PatientCombobox({
+  clients,
+  value,
+  onChange,
+}: {
+  clients: ClientOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = clients.find((c) => c.id === value);
+
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span
-        aria-hidden
-        className="inline-block h-2 w-2 rounded-full"
-        style={{ background: color }}
-      />
-      <span>{label}</span>
-    </span>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-[color:var(--border)] bg-card px-3 py-1 text-sm shadow-[0_1px_2px_0_var(--shadow-color)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40"
+        >
+          <span className={selected ? "" : "text-[color:var(--text-tertiary)]"}>
+            {selected ? selected.name : "Search patient…"}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0"
+      >
+        <Command
+          filter={(value, search) =>
+            value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+          }
+        >
+          <div className="flex items-center gap-2 border-b border-[color:var(--border-light)] px-3">
+            <Search className="h-4 w-4 shrink-0 opacity-50" />
+            <Command.Input
+              placeholder="Search by name, ID or phone…"
+              autoFocus
+              className="flex h-10 w-full bg-transparent text-sm outline-none placeholder:text-[color:var(--text-tertiary)]"
+            />
+          </div>
+          <Command.List
+            className="overflow-y-auto overscroll-contain p-1"
+            style={{ maxHeight: 256 }}
+          >
+            <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">
+              No patient found.
+            </Command.Empty>
+            {clients.map((c) => (
+              <Command.Item
+                key={c.id}
+                // Searchable on name + code + phone; only the name renders.
+                value={`${c.name} ${c.clientCode} ${c.phone}`}
+                title={`${c.name} · ${c.clientCode}`}
+                onSelect={() => {
+                  onChange(c.id);
+                  setOpen(false);
+                }}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm aria-selected:bg-secondary"
+              >
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                {value === c.id ? <Check className="h-4 w-4 text-[color:var(--primary)]" /> : null}
+              </Command.Item>
+            ))}
+          </Command.List>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

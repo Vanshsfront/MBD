@@ -272,7 +272,7 @@ export async function FrontOfficeDashboard({
                         {a.client.firstName} {a.client.lastName}
                       </p>
                       <p className="truncate text-[11px] text-[color:var(--text-tertiary)]">
-                        {a.service.name}
+                        {a.service?.name ?? "Service TBD"}
                       </p>
                     </div>
                     {isNow ? (

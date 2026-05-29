@@ -116,7 +116,7 @@ export async function GET(req: Request) {
       patientName: `${a.client.firstName} ${a.client.lastName}`,
       patientId: a.client.id,
       therapistName: a.therapist.name,
-      serviceName: a.service.name,
+      serviceName: a.service?.name ?? "Service TBD",
       startTime: a.startTime.toISOString(),
       status: a.status,
     })),

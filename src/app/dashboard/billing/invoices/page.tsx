@@ -62,6 +62,9 @@ export default async function InvoiceListPage({
         totalAmount: true,
         paidAmount: true,
         createdAt: true,
+        // Parsed below into "Consultant — Service +N" so the table row
+        // reads like the row tells you what was sold, not just "services".
+        lineItems: true,
         client: { select: { firstName: true, lastName: true, clientCode: true } },
       },
     }),
@@ -165,12 +168,23 @@ export default async function InvoiceListPage({
               <tbody>
                 {invoices.map((inv) => {
                   const due = Math.max(0, inv.totalAmount - inv.paidAmount);
+                  // Parse lineItems JSON once per row to surface the consultant
+                  // + first service in the Patient column secondary line.
+                  const summary = invoiceSummary(inv.lineItems, inv.invoiceFlavor);
                   return (
                     <tr key={inv.id}>
                       <td className="muted font-mono text-[11.5px]">{inv.invoiceNumber}</td>
                       <td className="muted tabular">{formatDate(inv.createdAt)}</td>
                       <td>
-                        {inv.client.firstName} {inv.client.lastName}
+                        <span className="block text-sm font-medium">
+                          {inv.client.firstName} {inv.client.lastName}
+                          {summary.consultant ? (
+                            <span className="font-normal text-muted-foreground"> / {summary.consultant}</span>
+                          ) : null}
+                        </span>
+                        {summary.item ? (
+                          <span className="block text-[11px] text-muted-foreground">{summary.item}</span>
+                        ) : null}
                       </td>
                       <td className="muted">{inv.invoiceFlavor.toLowerCase()}</td>
                       <td className="num tabular">{formatINR(inv.totalAmount)}</td>
@@ -221,4 +235,36 @@ function StatusChip({ status }: { status: InvoiceStatus }) {
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// Vansh's invoice headline helper — pulls a human summary out of the
+// invoice's lineItems JSON: the service/product name (with "+N" when more
+// than one) and the first consultant on it.
+function invoiceSummary(
+  lineItemsJson: string,
+  flavor: string,
+): { item: string; consultant: string | null } {
+  try {
+    const lines = JSON.parse(lineItemsJson) as Array<{
+      service?: string;
+      product?: string;
+      consultantName?: string;
+    }>;
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return { item: flavor.toLowerCase(), consultant: null };
+    }
+    const names = lines
+      .map((l) => l.service ?? l.product)
+      .filter((n): n is string => Boolean(n));
+    const consultant = lines.map((l) => l.consultantName).find(Boolean) ?? null;
+    const item =
+      names.length === 0
+        ? flavor.toLowerCase()
+        : names.length === 1
+          ? names[0]!
+          : `${names[0]} +${names.length - 1}`;
+    return { item, consultant };
+  } catch {
+    return { item: flavor.toLowerCase(), consultant: null };
+  }
 }

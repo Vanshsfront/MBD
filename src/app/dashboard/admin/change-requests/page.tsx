@@ -141,7 +141,7 @@ export default async function ChangeRequestsPage() {
               clientName: `${appt.client.firstName} ${appt.client.lastName}`,
               clientCode: appt.client.clientCode,
               therapistName: appt.therapist.name,
-              serviceName: appt.service.name,
+              serviceName: appt.service?.name ?? "Service TBD",
             }
           : null,
       };

@@ -286,7 +286,7 @@ export async function TherapistDashboard({
                           </span>
                         ) : null}
                       </div>
-                      <p className="text-xs text-[color:var(--text-tertiary)]">{a.service.name}</p>
+                      <p className="text-xs text-[color:var(--text-tertiary)]">{a.service?.name ?? "Service TBD"}</p>
                       {a.notes ? (
                         <p className="mt-1 text-[11.5px] text-muted-foreground">{a.notes}</p>
                       ) : null}

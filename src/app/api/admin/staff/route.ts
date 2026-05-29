@@ -16,6 +16,13 @@ import { BCRYPT_COST } from "@/lib/auth";
 // is provisioned out-of-band (and gated to non-prod), so neither is creatable.
 const ASSIGNABLE_ROLES = ["ADMIN", "FRONT_OFFICE", "CONSULTANT", "THERAPIST"] as const;
 
+// Calendar colour: a #RRGGBB / #RGB hex, or null to fall back to the
+// deterministic palette colour derived from the staff id.
+const colorSchema = z
+  .string()
+  .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "must be a hex colour")
+  .nullish();
+
 const createSchema = z.object({
   name: z.string().min(1).max(120),
   email: z.string().email().max(160),
@@ -24,6 +31,7 @@ const createSchema = z.object({
   departmentId: z.string().min(1).nullish(),
   centreId: z.string().min(1).nullish(),
   designation: z.string().max(120).nullish(),
+  color: colorSchema,
 });
 
 const updateSchema = z.object({
@@ -33,6 +41,7 @@ const updateSchema = z.object({
   departmentId: z.string().min(1).nullish(),
   centreId: z.string().min(1).nullish(),
   designation: z.string().max(120).nullish(),
+  color: colorSchema,
   isActive: z.boolean().optional(),
   resetPassword: z.string().min(6).max(60).optional(),
 });
@@ -68,6 +77,7 @@ export async function POST(req: Request) {
       departmentId: f.departmentId ?? null,
       centreId,
       designation: f.designation ?? null,
+      color: f.color ?? null,
     },
   });
 
@@ -112,6 +122,7 @@ export async function PATCH(req: Request) {
   if (f.name !== undefined) data.name = f.name;
   if (f.isActive !== undefined) data.isActive = f.isActive;
   if (f.designation !== undefined) data.designation = f.designation ?? null;
+  if (f.color !== undefined) data.color = f.color ?? null;
   if (f.departmentId !== undefined) data.departmentId = f.departmentId ?? null;
   if (f.centreId !== undefined) data.centreId = f.centreId ?? null;
   // Don't reassign the OWNER/DEV away from their privileged role via this UI.
@@ -129,6 +140,7 @@ export async function PATCH(req: Request) {
       departmentId: existing.departmentId,
       centreId: existing.centreId,
       designation: existing.designation,
+      color: existing.color,
       isActive: existing.isActive,
     },
     {
@@ -137,6 +149,7 @@ export async function PATCH(req: Request) {
       departmentId: updated.departmentId,
       centreId: updated.centreId,
       designation: updated.designation,
+      color: updated.color,
       isActive: updated.isActive,
     },
   );
