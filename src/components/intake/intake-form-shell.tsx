@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PhoneField } from "@/components/ui/phone-field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/lib/categories";
 
@@ -377,14 +378,11 @@ function PageOne({
             />
           </Field>
           <Field label="Phone *" error={errors.phone}>
-            <Input
-              type="tel"
-              inputMode="tel"
+            <PhoneField
               value={form.phone}
-              onChange={(e) => update("phone", e.target.value)}
+              onChange={(v) => update("phone", v)}
               onBlur={() => blur("phone")}
-              placeholder="+91 …"
-              aria-invalid={Boolean(errors.phone)}
+              invalid={Boolean(errors.phone)}
               required
             />
           </Field>
@@ -415,8 +413,8 @@ function PageOne({
               value={computedAge}
               readOnly
               tabIndex={-1}
-              className="bg-muted/50"
-              placeholder="auto from DOB"
+              className="bg-muted/50 text-muted-foreground"
+              aria-label="Age (derived from date of birth)"
             />
           </Field>
           <Field label="Sex *" error={errors.sex}>
@@ -496,12 +494,11 @@ function PageOne({
               />
             </Field>
             <Field label="Phone *" error={errors.emergencyPhone}>
-              <Input
-                type="tel"
+              <PhoneField
                 value={form.emergencyPhone}
-                onChange={(e) => update("emergencyPhone", e.target.value)}
+                onChange={(v) => update("emergencyPhone", v)}
                 onBlur={() => blur("emergencyPhone")}
-                aria-invalid={Boolean(errors.emergencyPhone)}
+                invalid={Boolean(errors.emergencyPhone)}
                 required
               />
             </Field>

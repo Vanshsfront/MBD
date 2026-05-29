@@ -25,10 +25,20 @@ interface PackageRow {
   totalSessions: number;
   completedSessions: number;
   totalPrice: number;
+  discountPercent: number;
+  discountAmount: number;
+  validFrom: string;
   validUntil: string;
   status: string;
   serviceMix: string;
   invoices: Array<{ id: string; invoiceNumber: string; status: string; totalAmount: number }>;
+  sessions: Array<{
+    id: string;
+    date: string;
+    status: string;
+    therapist: string | null;
+    service: string | null;
+  }>;
 }
 
 interface ConsultationRow {
@@ -335,50 +345,240 @@ export function PackagesView({
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Packages ({packages.length})</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {packages.length === 0 ? (
-            <p className="p-6 text-sm text-muted-foreground">No packages for this patient yet.</p>
-          ) : (
-            <ul className="divide-y">
-              {packages.map((p) => (
-                <li key={p.id} className="px-6 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">
-                        {p.completedSessions}/{p.totalSessions} sessions used
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Valid till {new Date(p.validUntil).toLocaleDateString("en-IN")} · total{" "}
-                        {formatINR(p.totalPrice)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={p.status === "ACTIVE" ? "success" : "default"}>
-                        {p.status}
-                      </Badge>
-                      {p.invoices.length > 0 ? (
-                        p.invoices.map((inv) => (
-                          <Link
-                            key={inv.id}
-                            href={`/dashboard/billing/invoices/${inv.id}`}
-                            className="rounded-md border px-2 py-1 text-xs hover:bg-accent"
-                          >
-                            {inv.invoiceNumber}
-                          </Link>
-                        ))
-                      ) : null}
-                    </div>
-                  </div>
+      <div className="space-y-4">
+        <h2 className="text-base font-semibold">Packages ({packages.length})</h2>
+        {packages.length === 0 ? (
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-sm text-muted-foreground">No packages for this patient yet.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          packages.map((p) => <PackageDetailCard key={p.id} pkg={p} />)
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PackageDetailCard({ pkg }: { pkg: PackageRow }) {
+  const mix = parseServiceMix(pkg.serviceMix);
+  const pct = pkg.totalSessions > 0
+    ? Math.min(100, Math.round((pkg.completedSessions / pkg.totalSessions) * 100))
+    : 0;
+  const remaining = pkg.totalSessions - pkg.completedSessions;
+  const daysToExpiry = Math.ceil(
+    (new Date(pkg.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+  );
+  const isExpiringSoon = pkg.status === "ACTIVE" && daysToExpiry >= 0 && daysToExpiry <= 14;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="p-6">
+        {/* Header: name (derived from mix), status, valid range */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="eyebrow !mb-1">Package</p>
+            <h3 className="text-lg font-semibold tracking-tight">
+              {packageName(mix, pkg.totalSessions)}
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatDate(pkg.validFrom)} – {formatDate(pkg.validUntil)}
+              {isExpiringSoon ? (
+                <span className="ml-2 chip chip-warning">expires in {daysToExpiry}d</span>
+              ) : null}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={
+                pkg.status === "ACTIVE"
+                  ? "success"
+                  : pkg.status === "COMPLETED"
+                    ? "info"
+                    : pkg.status === "EXPIRED"
+                      ? "warning"
+                      : "default"
+              }
+            >
+              {pkg.status}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-4 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium">
+              {pkg.completedSessions} of {pkg.totalSessions} sessions used
+            </span>
+            <span className="text-muted-foreground tabular-nums">
+              {remaining} remaining · {pct}%
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-[color:var(--primary)] transition-[width] duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Service mix breakdown */}
+        {mix.length > 0 ? (
+          <div className="mt-4 border-t border-[color:var(--border-light)] pt-4">
+            <p className="eyebrow !mb-2">Service mix</p>
+            <ul className="space-y-1 text-sm">
+              {mix.map((entry, i) => (
+                <li key={i} className="flex justify-between gap-3">
+                  <span>
+                    <span className="font-mono text-xs text-[color:var(--text-tertiary)]">
+                      {entry.count}×{" "}
+                    </span>
+                    {entry.serviceName ?? entry.serviceId ?? "—"}
+                  </span>
                 </li>
               ))}
             </ul>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        ) : null}
+
+        {/* Pricing */}
+        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-[color:var(--border-light)] pt-4 text-sm sm:grid-cols-3">
+          <KvLine k="Total price" v={formatINR(pkg.totalPrice)} />
+          {pkg.discountPercent > 0 ? (
+            <KvLine k="Discount" v={`${pkg.discountPercent}%`} />
+          ) : pkg.discountAmount > 0 ? (
+            <KvLine k="Discount" v={formatINR(pkg.discountAmount)} />
+          ) : null}
+          <KvLine k="Per session" v={formatINR(perSession(pkg))} />
+        </div>
+
+        {/* Linked invoices */}
+        {pkg.invoices.length > 0 ? (
+          <div className="mt-4 border-t border-[color:var(--border-light)] pt-4">
+            <p className="eyebrow !mb-2">Linked invoices</p>
+            <ul className="flex flex-wrap gap-2">
+              {pkg.invoices.map((inv) => (
+                <li key={inv.id}>
+                  <Link
+                    href={`/dashboard/billing/invoices/${inv.id}`}
+                    className="inline-flex items-center gap-2 rounded-md border border-[color:var(--border-light)] px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                  >
+                    <span className="font-mono">{inv.invoiceNumber}</span>
+                    <Badge
+                      variant={inv.status === "PAID" ? "success" : "warning"}
+                      className="text-[10px]"
+                    >
+                      {inv.status}
+                    </Badge>
+                    <span className="tabular-nums">{formatINR(inv.totalAmount)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* Linked sessions */}
+        {pkg.sessions.length > 0 ? (
+          <div className="mt-4 border-t border-[color:var(--border-light)] pt-4">
+            <p className="eyebrow !mb-2">Sessions ({pkg.sessions.length})</p>
+            <div className="overflow-x-auto">
+              <table className="tbl tbl-compact">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Service</th>
+                    <th>Therapist</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pkg.sessions.map((s) => (
+                    <tr key={s.id}>
+                      <td className="muted tabular">{formatDate(s.date)}</td>
+                      <td>{s.service ?? "—"}</td>
+                      <td className="muted">{s.therapist ?? "—"}</td>
+                      <td>
+                        <Badge
+                          variant={
+                            s.status === "COMPLETED"
+                              ? "success"
+                              : s.status === "CANCELLED" || s.status === "NO_SHOW"
+                                ? "danger"
+                                : "info"
+                          }
+                          className="text-[10px]"
+                        >
+                          {s.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function KvLine({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex flex-col">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--text-tertiary)]">
+        {k}
+      </span>
+      <span className="tabular-nums">{v}</span>
     </div>
   );
+}
+
+interface MixEntry {
+  serviceId?: string;
+  serviceName?: string;
+  count: number;
+}
+
+function parseServiceMix(json: string | null | undefined): MixEntry[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((e): e is MixEntry => e && typeof e === "object" && typeof e.count === "number")
+      .map((e) => ({
+        serviceId: typeof e.serviceId === "string" ? e.serviceId : undefined,
+        serviceName: typeof e.serviceName === "string" ? e.serviceName : undefined,
+        count: e.count,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function packageName(mix: MixEntry[], totalSessions: number): string {
+  if (mix.length === 0) return `${totalSessions}-session package`;
+  // "Physio 12-pack" if single service; otherwise "Mixed package (4 services)"
+  if (mix.length === 1 && mix[0]!.serviceName) {
+    return `${mix[0]!.serviceName} · ${totalSessions}-pack`;
+  }
+  const primary = mix[0]!.serviceName ?? "Mixed";
+  return `${primary} package (${mix.length} services · ${totalSessions} sessions)`;
+}
+
+function perSession(pkg: PackageRow): number {
+  if (pkg.totalSessions <= 0) return 0;
+  return pkg.totalPrice / pkg.totalSessions;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }

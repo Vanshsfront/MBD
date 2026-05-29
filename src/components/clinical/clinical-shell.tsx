@@ -7,14 +7,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import type { DocxTemplateKey } from "@/lib/templates/keys";
 import { readApiError } from "@/lib/error-messages";
 import {
   type RecommendationItem,
-  FormFooter,
   RecommendationPicker,
   Section,
   type ServiceOption,
@@ -24,6 +22,7 @@ import {
   type InventoryItemOption,
   type InventoryUsageItem,
 } from "./inventory-usage-widget";
+import { SectionRail } from "./section-rail";
 
 import { PhysicianConsultationForm } from "./physician-consultation";
 import { PhysiotherapyConsultationForm } from "./physiotherapy-consultation";
@@ -368,28 +367,83 @@ export function ClinicalShell({
     };
   }, [formData, chiefComplaints, diagnosis, planOfCare, followUp, recommended, viewOnly]);
 
+  const saveLabel = pending ? "Saving…" : isLocked ? "Locked" : "Complete & lock";
+
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {TEMPLATE_LABELS[templateKey]} — {patientName}
-          </CardTitle>
-          <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {department ? (
-              <span>{department}</span>
+    <div className="space-y-4 pb-24">
+      {/* Page header — title + meta + autosave pill + actions. Non-sticky
+          (the parent patient layout already provides a sticky chrome strip;
+          stacking two stickies fights with the variable-height of the
+          parent and causes the page header to either overlap or float
+          mid-page). The sticky-footer pill below keeps Save/Lock reachable
+          while scrolling. */}
+      <header className="space-y-2 border-b border-[color:var(--border-light)] pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="eyebrow">
+              Clinical record {isFirstVisit ? "· first visit" : "· follow-up"}
+            </p>
+            <h1 className="break-words text-xl font-semibold tracking-tight">
+              {TEMPLATE_LABELS[templateKey]} — {patientName}
+            </h1>
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {department ? <span>{department}</span> : null}
+              {department ? <span>·</span> : null}
+              <span>template: {templateKey}</span>
+              {isLocked ? <Badge variant="warning">locked</Badge> : null}
+              {viewOnly ? (
+                <Badge variant="default">read-only (reassigned away)</Badge>
+              ) : null}
+            </p>
+          </div>
+          {/* Page-header action cluster — autosave + Open PDF + Save/Lock.
+            * On mobile (<sm) the Save/Lock buttons are hidden because the
+            * sticky-footer pill below the body provides the same buttons in
+            * a more reachable spot. Open PDF + autosave stay on at all
+            * breakpoints because they're status, not action. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <AutosavePill status={autoSaveStatus} viewOnly={viewOnly} isLocked={isLocked} />
+            {activeId ? (
+              <Button asChild variant="outline" size="sm">
+                <a
+                  href={`/api/consultations/${activeId}/render?format=pdf`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open PDF
+                </a>
+              </Button>
             ) : null}
-            <span>· template: {templateKey}</span>
-            {isFirstVisit ? <Badge variant="info">first visit</Badge> : null}
-            {isLocked ? <Badge variant="warning">locked</Badge> : null}
-            {viewOnly ? (
-              <Badge variant="default">read-only (reassigned away)</Badge>
+            {!viewOnly ? (
+              <div className="hidden flex-wrap items-center gap-2 sm:flex">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pending || isLocked}
+                  onClick={() => save("DRAFT")}
+                >
+                  Save draft
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={pending || isLocked}
+                  onClick={() => save("COMPLETED")}
+                >
+                  {saveLabel}
+                </Button>
+              </div>
             ) : null}
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {/* Per-template form. All forms accept the same set of common props
-              and call setFormData with their typed payload (via cast). */}
+          </div>
+        </div>
+      </header>
+
+      {/* Body: 200px sticky section rail + 1fr main column.
+          On mobile (lg breakpoint), rail collapses to a no-op. */}
+      <div className="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)]">
+        <div className="hidden lg:block">
+          <SectionRail />
+        </div>
+        <div id="clinical-main" className="min-w-0 space-y-3.5">
           <PerTemplateForm
             templateKey={templateKey}
             formData={formData}
@@ -405,23 +459,23 @@ export function ClinicalShell({
             disabled={disabled}
           />
 
-          {/* Inventory usage — tape, supplements, etc. consumed during the
-              session. PRD §4 C5. Decrements stock + logs on save. */}
+          {/* Inventory consumed in session — PRD §4 C5. Decrements stock +
+              writes InventoryLog on manual save (never on autosave). */}
           {inventory.length > 0 ? (
-            <>
-              <Separator />
+            <Section
+              title="Inventory used in session"
+              description="Tape, supplements, etc. Decrements stock on save."
+            >
               <InventoryUsageWidget
                 options={inventory}
                 value={inventoryUsage}
                 onChange={setInventoryUsage}
                 disabled={disabled}
               />
-            </>
+            </Section>
           ) : null}
 
-          {/* Recommendation picker — therapist proposes services; FO converts
-              into a Package on /dashboard/patients/[id]/packages. */}
-          <Separator />
+          {/* Therapist recommendation — FO converts to a Package downstream. */}
           <Section
             title="Recommended sessions"
             description="Therapist proposes service mix. FO converts on the Packages tab."
@@ -434,62 +488,127 @@ export function ClinicalShell({
             />
           </Section>
 
-          <FormFooter
-            pending={pending}
-            isLocked={isLocked}
-            isViewOnly={viewOnly}
-            activeId={activeId}
-            autoSaveStatus={autoSaveStatus}
-            onSaveDraft={() => save("DRAFT")}
-            onComplete={() => save("COMPLETED")}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Prior consultations — read-only context. Same template family. */}
-      {consultations.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Prior records ({consultations.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ul className="divide-y">
-              {consultations.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex flex-wrap items-center justify-between gap-2 px-6 py-2 text-xs"
-                >
-                  <span>
-                    <span className="font-medium">{c.templateKey}</span>{" "}
-                    <span className="text-muted-foreground">
-                      · {new Date(c.date).toLocaleDateString("en-IN")}
-                    </span>{" "}
-                    <span className="text-muted-foreground">
-                      · {c.consultantName ?? "—"}
+          {/* Prior consultations — same template family, read-only context. */}
+          {consultations.length > 0 ? (
+            <Section
+              title={`Prior records (${consultations.length})`}
+              description="Same template family. Open the PDF to review."
+            >
+              <ul className="divide-y divide-[color:var(--border-light)]">
+                {consultations.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs"
+                  >
+                    <span>
+                      <span className="font-medium">{c.templateKey}</span>{" "}
+                      <span className="text-muted-foreground">
+                        · {new Date(c.date).toLocaleDateString("en-IN")}
+                      </span>{" "}
+                      <span className="text-muted-foreground">· {c.consultantName ?? "—"}</span>
                     </span>
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Badge
-                      variant={c.status === "COMPLETED" ? "success" : "default"}
-                    >
-                      {c.status}
-                    </Badge>
-                    <a
-                      href={`/api/consultations/${c.id}/render?format=pdf`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      PDF
-                    </a>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+                    <span className="flex items-center gap-2">
+                      <Badge variant={c.status === "COMPLETED" ? "success" : "default"}>
+                        {c.status}
+                      </Badge>
+                      <a
+                        href={`/api/consultations/${c.id}/render?format=pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        PDF
+                      </a>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Sticky footer — autosave status + Save / Lock buttons stay reachable
+          while scrolling a long form. Hidden when view-only since there's
+          nothing to act on. On narrow viewports the autosave pill drops to
+          icon-only (handled in AutosavePill compact branch). */}
+      {!viewOnly ? (
+        <div className="fixed bottom-3 left-1/2 z-20 flex max-w-[calc(100vw-16px)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-[color:var(--border)] bg-card/95 px-2.5 py-2 shadow-[0_10px_30px_-12px_rgba(26,26,30,0.35)] backdrop-blur sm:rounded-full sm:px-3">
+          <div className="hidden sm:inline-flex">
+            <AutosavePill status={autoSaveStatus} viewOnly={viewOnly} isLocked={isLocked} compact />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending || isLocked}
+            onClick={() => save("DRAFT")}
+          >
+            Save draft
+          </Button>
+          <Button
+            size="sm"
+            disabled={pending || isLocked}
+            onClick={() => save("COMPLETED")}
+          >
+            {saveLabel}
+          </Button>
+        </div>
       ) : null}
     </div>
+  );
+}
+
+// Visible autosave indicator. Tracks the shell's `autoSaveStatus` machine —
+// idle / saving / saved / error — and renders a chip. Compact variant drops
+// the prose so it fits in the sticky footer pill.
+function AutosavePill({
+  status,
+  viewOnly,
+  isLocked,
+  compact,
+}: {
+  status: "idle" | "saving" | "saved" | "error";
+  viewOnly: boolean;
+  isLocked: boolean;
+  compact?: boolean;
+}) {
+  if (viewOnly || isLocked) {
+    return (
+      <span className="autosave">
+        <span className="dot" style={{ background: "var(--text-tertiary)" }} aria-hidden />
+        {compact ? "Read-only" : "Read-only"}
+      </span>
+    );
+  }
+  if (status === "saving") {
+    return (
+      <span className="autosave">
+        <span className="dot" style={{ background: "var(--warning)" }} aria-hidden />
+        {compact ? "Saving…" : "Autosaving…"}
+      </span>
+    );
+  }
+  if (status === "saved") {
+    return (
+      <span className="autosave" style={{ color: "#15683b" }}>
+        <span className="dot live" aria-hidden />
+        {compact ? "Saved" : "Draft saved"}
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="autosave" style={{ color: "var(--danger)" }}>
+        <span className="dot" style={{ background: "var(--danger)" }} aria-hidden />
+        {compact ? "Save failed" : "Autosave failed — use Save draft"}
+      </span>
+    );
+  }
+  return (
+    <span className="autosave">
+      <span className="dot" aria-hidden style={{ background: "var(--text-tertiary)" }} />
+      {compact ? "Ready" : "Autosave ready"}
+    </span>
   );
 }
 

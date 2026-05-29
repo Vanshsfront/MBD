@@ -24,7 +24,20 @@ export default async function PackagesPage({
   const packages = await prisma.package.findMany({
     where: { clientId: id },
     orderBy: { createdAt: "desc" },
-    include: { invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true } } },
+    include: {
+      invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true } },
+      sessions: {
+        orderBy: { sessionDate: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          sessionDate: true,
+          status: true,
+          therapist: { select: { name: true } },
+          service: { select: { name: true } },
+        },
+      },
+    },
   });
 
   // The most recent DRAFT consultation with recommendations is the input
@@ -66,6 +79,9 @@ export default async function PackagesPage({
         totalSessions: p.totalSessions,
         completedSessions: p.completedSessions,
         totalPrice: p.totalPrice,
+        discountPercent: p.discountPercent,
+        discountAmount: p.discountAmount,
+        validFrom: p.validFrom.toISOString(),
         validUntil: p.validUntil.toISOString(),
         status: p.status,
         serviceMix: p.serviceMix,
@@ -74,6 +90,13 @@ export default async function PackagesPage({
           invoiceNumber: i.invoiceNumber,
           status: i.status,
           totalAmount: i.totalAmount,
+        })),
+        sessions: p.sessions.map((s) => ({
+          id: s.id,
+          date: s.sessionDate.toISOString(),
+          status: s.status,
+          therapist: s.therapist?.name ?? null,
+          service: s.service?.name ?? null,
         })),
       }))}
       consultations={recentConsultations.map((c) => ({

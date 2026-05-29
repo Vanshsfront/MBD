@@ -85,6 +85,7 @@ export default async function ClinicalPage({
       templateKey: true,
       date: true,
       status: true,
+      consultantId: true,
       consultant: { select: { name: true } },
     },
   });
@@ -224,6 +225,14 @@ export default async function ClinicalPage({
           date: c.date,
           status: c.status,
           consultant: c.consultant ? { name: c.consultant.name } : null,
+          // Upload rights: author consultant, OWNER, ADMIN, DEV. Mirrors the
+          // server-side gate in /api/consultations/[id]/attachments POST so
+          // the UI never offers a button that the API would 403.
+          canUpload:
+            session.user.role === "OWNER" ||
+            session.user.role === "ADMIN" ||
+            session.user.role === "DEV" ||
+            c.consultantId === session.user.id,
         }))}
       />
 

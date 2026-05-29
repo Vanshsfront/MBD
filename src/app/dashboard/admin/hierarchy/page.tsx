@@ -94,12 +94,13 @@ export default async function HierarchyPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-8 pb-12">
+    <div className="space-y-4 pb-6">
       <header className="space-y-1">
-        <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-[color:var(--text-primary)]">
-          <GitBranch className="h-7 w-7 text-primary" /> Hierarchy
+        <p className="eyebrow">Admin</p>
+        <h1 className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight">
+          <GitBranch className="h-6 w-6 text-[color:var(--primary)]" /> Hierarchy
         </h1>
-        <p className="max-w-2xl text-sm text-[color:var(--text-tertiary)]">
+        <p className="max-w-2xl text-sm text-muted-foreground">
           Click any card to edit a person, or use <strong>+</strong> in a column header to add staff into that branch.
           Admins with a clinical department appear in both places.
         </p>
@@ -133,7 +134,7 @@ export default async function HierarchyPage() {
             header={{
               icon: <ShieldCheck className="h-3.5 w-3.5" />,
               label: "Administrators",
-              tint: "text-purple-700 border-purple-300 bg-purple-50",
+              accent: "var(--chart-1)",
               addButton: <AddStaffButton departments={depts} defaultRole="ADMIN" label="admin" />,
             }}
           >
@@ -148,7 +149,7 @@ export default async function HierarchyPage() {
             header={{
               icon: <Briefcase className="h-3.5 w-3.5" />,
               label: "Front Office",
-              tint: "text-sky-700 border-sky-300 bg-sky-50",
+              accent: "var(--chart-2)",
               addButton: <AddStaffButton departments={depts} defaultRole="FRONT_OFFICE" label="FO" />,
             }}
           >
@@ -165,7 +166,7 @@ export default async function HierarchyPage() {
               header={{
                 icon: <Stethoscope className="h-3.5 w-3.5" />,
                 label: deptName,
-                tint: "text-emerald-700 border-emerald-300 bg-emerald-50",
+                accent: "var(--chart-3)",
                 addButton: (
                   <AddStaffButton departments={depts} defaultRole="THERAPIST" defaultDepartmentId={bucket.id} label="staff" />
                 ),
@@ -214,14 +215,17 @@ function BranchColumn({
   header,
   children,
 }: {
-  header: { icon: React.ReactNode; label: string; tint: string; addButton: React.ReactNode };
+  header: { icon: React.ReactNode; label: string; accent: string; addButton: React.ReactNode };
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1 shadow-sm ${header.tint}`}>
+      <div
+        className="inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1 ring-1 ring-[color:var(--border-light)] shadow-[0_1px_2px_0_var(--shadow-color)]"
+        style={{ color: header.accent }}
+      >
         {header.icon}
-        <span className="text-[10px] font-bold uppercase tracking-wider">{header.label}</span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.12em]">{header.label}</span>
       </div>
       {header.addButton}
       <div className="mt-1 flex flex-col items-center gap-2">{children}</div>

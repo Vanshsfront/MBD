@@ -5,6 +5,7 @@ import { activeCentreId } from "@/lib/centre";
 import { TherapistDashboard } from "./_dashboards/therapist";
 import { FrontOfficeDashboard } from "./_dashboards/front-office";
 import { OwnerDashboard } from "./_dashboards/owner";
+import { AdminDashboard } from "./_dashboards/admin";
 
 export const metadata = { title: "Dashboard — MBD Clinic OS" };
 
@@ -32,7 +33,19 @@ export default async function DashboardHome() {
       />
     );
   }
-  // OWNER, ADMIN, DEV.
+  if (role === "ADMIN") {
+    // ADMIN gets a dedicated landing (operations + compliance) rather than
+    // the Owner's revenue overview. See _dashboards/admin.tsx top-comment
+    // for the audit rationale.
+    return (
+      <AdminDashboard
+        userName={session.user.name ?? "Admin"}
+        role={role}
+        centreId={centreId}
+      />
+    );
+  }
+  // OWNER, DEV.
   return (
     <OwnerDashboard
       userName={session.user.name ?? "Owner"}

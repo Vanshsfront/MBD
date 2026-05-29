@@ -27,6 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { readApiError } from "@/lib/error-messages";
+import type { Role } from "@/lib/permissions";
+import { RolePermissionsPreview } from "./role-permissions-preview";
 
 export interface StaffLite {
   id: string;
@@ -176,6 +178,7 @@ export function AddStaffDialog({
           <Field label="Designation / title">
             <Input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Senior Physiotherapist" />
           </Field>
+          <RolePermissionsPreview role={form.role as Role} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -322,6 +325,7 @@ export function EditStaffDialog({
             <Switch checked={form.isActive} onCheckedChange={(v) => setForm({ ...form, isActive: !!v })} />
             <span className="text-xs font-semibold">{form.isActive ? "Active" : "Inactive"}</span>
           </div>
+          <RolePermissionsPreview role={form.role as Role} />
           <p className="border-t border-[color:var(--border-light)] pt-2 text-[10px] text-[color:var(--text-tertiary)]">
             Email <span className="font-mono">{staff.email}</span> is not editable (it identifies the login).
           </p>

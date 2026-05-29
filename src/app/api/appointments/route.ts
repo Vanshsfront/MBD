@@ -16,7 +16,34 @@ const createSchema = z.object({
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   notes: z.string().max(500).optional(),
+  // Optional: link this appointment to a package whose remaining session
+  // count for this service should be decremented atomically with the
+  // booking. Caller is expected to have confirmed via the FO prompt.
+  consumeFromPackageId: z.string().optional(),
+  // Optional: if the therapist isn't currently assigned to this patient,
+  // create the ClientDoctorAssignment row inside the same transaction.
+  addAssignment: z.boolean().optional(),
 });
+
+interface ServiceMixEntry {
+  serviceId?: string;
+  serviceName?: string;
+  count: number;
+  consumed?: number;
+}
+
+function parseMix(json: string | null | undefined): ServiceMixEntry[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(
+      (e): e is ServiceMixEntry => e && typeof e === "object" && typeof e.count === "number",
+    );
+  } catch {
+    return [];
+  }
+}
 
 const updateSchema = z.object({
   id: z.string().min(1),
@@ -121,18 +148,113 @@ export async function POST(req: Request) {
 
   const warning = await patientAdjacencyWarning(f.clientId, start, end);
 
-  const appointment = await prisma.appointment.create({
-    data: {
-      clientId: f.clientId,
-      therapistId: f.therapistId,
-      serviceId: f.serviceId,
-      centreId: client.centreId,
-      startTime: start,
-      endTime: end,
-      notes: f.notes ?? null,
-      status: "CONFIRMED",
-    },
-  });
+  // Atomic: book the appointment + (optionally) decrement the package
+  // counters + (optionally) create the missing therapist assignment.
+  // If the package isn't actually consumable (status flipped, exhausted,
+  // service not in mix) we 409 instead of silently no-op'ing.
+  type TxResult = {
+    appointment: Awaited<ReturnType<typeof prisma.appointment.create>>;
+    consumedPackage: { id: string; completedSessions: number } | null;
+    addedAssignment: boolean;
+  };
+  let txResult: TxResult;
+  try {
+    txResult = await prisma.$transaction(async (tx): Promise<TxResult> => {
+      let consumedPackage: { id: string; completedSessions: number } | null = null;
+
+      if (f.consumeFromPackageId) {
+        const pkg = await tx.package.findUnique({
+          where: { id: f.consumeFromPackageId },
+          select: {
+            id: true,
+            clientId: true,
+            status: true,
+            totalSessions: true,
+            completedSessions: true,
+            validFrom: true,
+            validUntil: true,
+            serviceMix: true,
+          },
+        });
+        if (!pkg || pkg.clientId !== f.clientId) throw new Error("package_not_found");
+        if (pkg.status !== "ACTIVE") throw new Error("package_inactive");
+        if (pkg.validUntil < start || pkg.validFrom > start) throw new Error("package_out_of_range");
+        const mix = parseMix(pkg.serviceMix);
+        const idx = mix.findIndex((e) => e.serviceId === f.serviceId);
+        if (idx === -1) throw new Error("package_service_mismatch");
+        const entry = mix[idx]!;
+        const consumed = entry.consumed ?? 0;
+        if (entry.count - consumed <= 0) throw new Error("package_exhausted_for_service");
+
+        mix[idx] = { ...entry, consumed: consumed + 1 };
+        const nextCompleted = pkg.completedSessions + 1;
+        const nextStatus = nextCompleted >= pkg.totalSessions ? "COMPLETED" : pkg.status;
+
+        await tx.package.update({
+          where: { id: pkg.id },
+          data: {
+            serviceMix: JSON.stringify(mix),
+            completedSessions: nextCompleted,
+            status: nextStatus,
+          },
+        });
+        consumedPackage = { id: pkg.id, completedSessions: nextCompleted };
+      }
+
+      let addedAssignment = false;
+      if (f.addAssignment) {
+        const existing = await tx.clientDoctorAssignment.findFirst({
+          where: { clientId: f.clientId, staffId: f.therapistId, endedAt: null },
+          select: { id: true },
+        });
+        if (!existing) {
+          // Promote to primary only if no other active primary exists, so
+          // we don't accidentally demote the patient's lead therapist.
+          const anyPrimary = await tx.clientDoctorAssignment.findFirst({
+            where: { clientId: f.clientId, endedAt: null, isPrimary: true },
+            select: { id: true },
+          });
+          await tx.clientDoctorAssignment.create({
+            data: {
+              clientId: f.clientId,
+              staffId: f.therapistId,
+              isPrimary: !anyPrimary,
+            },
+          });
+          addedAssignment = true;
+        }
+      }
+
+      const appointment = await tx.appointment.create({
+        data: {
+          clientId: f.clientId,
+          therapistId: f.therapistId,
+          serviceId: f.serviceId,
+          centreId: client.centreId,
+          startTime: start,
+          endTime: end,
+          notes: f.notes ?? null,
+          status: "CONFIRMED",
+          packageId: f.consumeFromPackageId ?? null,
+        },
+      });
+      return { appointment, consumedPackage, addedAssignment };
+    });
+  } catch (err) {
+    const code = err instanceof Error ? err.message : "unknown";
+    const mappable = new Set([
+      "package_not_found",
+      "package_inactive",
+      "package_out_of_range",
+      "package_service_mismatch",
+      "package_exhausted_for_service",
+    ]);
+    if (mappable.has(code)) {
+      return NextResponse.json({ error: code }, { status: 409 });
+    }
+    throw err;
+  }
+  const { appointment, consumedPackage, addedAssignment } = txResult;
 
   // Notification to therapist. NEW_PATIENT only for the client's first ever
   // appointment; everything after is APPT_REMINDER. Otherwise the bell would
@@ -161,7 +283,18 @@ export async function POST(req: Request) {
       startTime: { old: null, new: start.toISOString() },
       endTime: { old: null, new: end.toISOString() },
     },
-    metadata: { clientId: f.clientId, therapistId: f.therapistId, serviceId: f.serviceId },
+    metadata: {
+      clientId: f.clientId,
+      therapistId: f.therapistId,
+      serviceId: f.serviceId,
+      ...(consumedPackage
+        ? {
+            packageId: consumedPackage.id,
+            packageCompletedAfter: consumedPackage.completedSessions,
+          }
+        : {}),
+      ...(addedAssignment ? { addedAssignment: true } : {}),
+    },
     ipAddress: meta.ipAddress,
     userAgent: meta.userAgent,
   });
@@ -170,6 +303,8 @@ export async function POST(req: Request) {
     ok: true,
     appointment: serialise(appointment),
     warning,
+    ...(consumedPackage ? { consumedPackage } : {}),
+    ...(addedAssignment ? { addedAssignment: true } : {}),
   });
 }
 
@@ -277,11 +412,43 @@ export async function GET(req: Request) {
     },
     orderBy: { startTime: "asc" },
     include: {
-      client: { select: { id: true, firstName: true, lastName: true } },
+      client: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          flags: {
+            where: { isActive: true },
+            select: { type: true, label: true, color: true },
+          },
+        },
+      },
       therapist: { select: { id: true, name: true } },
       service: { select: { id: true, name: true, basePrice: true, departmentId: true } },
     },
   });
+
+  // Clash detection — sweep events per therapist, mark IDs whose [start,end)
+  // overlaps another non-CANCELLED appointment for the same therapist.
+  // Bounded by the window so the O(N log N) sort is comfortable.
+  const clashedIds = computeClashes(appointments);
+
+  // Pending RESCHEDULE change requests — surface a chip on the event so the
+  // FO sees at-a-glance "patient/therapist wants to move this". Stored in
+  // ChangeRequest.details JSON as { appointmentId }.
+  const pendingReschedules = await prisma.changeRequest.findMany({
+    where: { status: "PENDING", type: "RESCHEDULE" },
+    select: { details: true },
+  });
+  const pendingApptIds = new Set<string>();
+  for (const r of pendingReschedules) {
+    try {
+      const parsed = JSON.parse(r.details) as { appointmentId?: string };
+      if (parsed.appointmentId) pendingApptIds.add(parsed.appointmentId);
+    } catch {
+      /* skip malformed */
+    }
+  }
 
   return NextResponse.json(
     appointments.map((a) => ({
@@ -295,8 +462,36 @@ export async function GET(req: Request) {
       clientId: a.client.id,
       serviceId: a.service.id,
       serviceName: a.service.name,
+      flags: a.client.flags ?? [],
+      hasClash: clashedIds.has(a.id),
+      pendingReschedule: pendingApptIds.has(a.id),
     })),
   );
+}
+
+function computeClashes(
+  appointments: Array<{ id: string; startTime: Date; endTime: Date; therapistId: string; status: string }>,
+): Set<string> {
+  const clashed = new Set<string>();
+  // Group by therapist, sort by start, sweep for overlaps. Skip cancelled
+  // and no-show since those shouldn't flag healthy bookings as conflicting.
+  const byTherapist = new Map<string, Array<{ id: string; startTime: Date; endTime: Date }>>();
+  for (const a of appointments) {
+    if (a.status === "CANCELLED" || a.status === "NO_SHOW") continue;
+    if (!byTherapist.has(a.therapistId)) byTherapist.set(a.therapistId, []);
+    byTherapist.get(a.therapistId)!.push({ id: a.id, startTime: a.startTime, endTime: a.endTime });
+  }
+  for (const list of byTherapist.values()) {
+    list.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        if (list[j]!.startTime >= list[i]!.endTime) break;
+        clashed.add(list[i]!.id);
+        clashed.add(list[j]!.id);
+      }
+    }
+  }
+  return clashed;
 }
 
 interface PrismaAppointment {

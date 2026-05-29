@@ -216,12 +216,24 @@ function AssignPanel({
     [client.selectedCategories],
   );
 
-  const matchingTherapists = useMemo(() => {
-    if (eligibleDepartments.length === 0) return therapists;
-    return therapists.filter(
-      (t) => t.department && eligibleDepartments.includes(t.department),
-    );
-  }, [eligibleDepartments, therapists]);
+  // Group all therapists by department for the accordion. Departments the
+  // patient selected are expanded by default; the others are collapsed but
+  // still pickable (the FO can assign anyone, not just matching depts).
+  const therapistsByDepartment = useMemo(() => {
+    const groups = new Map<string, TherapistOption[]>();
+    for (const t of therapists) {
+      const key = t.department ?? "Unassigned";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(t);
+    }
+    // Stable sort: eligible departments first, then alphabetical.
+    return Array.from(groups.entries()).sort(([a], [b]) => {
+      const aEligible = eligibleDepartments.includes(a) ? 0 : 1;
+      const bEligible = eligibleDepartments.includes(b) ? 0 : 1;
+      if (aEligible !== bEligible) return aEligible - bEligible;
+      return a.localeCompare(b);
+    });
+  }, [therapists, eligibleDepartments]);
 
   const [customerType, setCustomerType] = useState<"WALK_IN" | "BOOKING" | "REFERRAL">("WALK_IN");
   const [referralSourceId, setReferralSourceId] = useState<string>("");
@@ -230,6 +242,20 @@ function AssignPanel({
   const [selectedTherapists, setSelectedTherapists] = useState<string[]>([]);
   const [primaryId, setPrimaryId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  // Expanded department accordion state — initially the patient's selected
+  // departments are open, everything else collapsed.
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(
+    () => new Set(eligibleDepartments),
+  );
+  function toggleDept(name: string) {
+    setExpandedDepts((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
 
   // Effective primary = the explicit pick if still selected, else the first
   // selected therapist. PRD §4 A4: first assignment is primary by default, but
@@ -353,95 +379,117 @@ function AssignPanel({
         <section>
           <Label className="mb-2 block">Assign therapist(s)</Label>
           <p className="mb-3 text-xs text-muted-foreground">
-            Filtered to {eligibleDepartments.length === 0 ? "all departments" : eligibleDepartments.join(" / ")}.
+            {eligibleDepartments.length === 0
+              ? "Browse any department below."
+              : `Patient picked: ${eligibleDepartments.join(" / ")} — those are expanded. Open any other department to pick from there.`}{" "}
             Tick one or more — the ★ marks the primary therapist (first by default).
           </p>
-          {matchingTherapists.length === 0 ? (
-            <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              No matching staff. Pick therapists from the full list:
-              <span className="ml-2">
-                {therapists.slice(0, 5).map((t) => (
+          <div className="space-y-2">
+            {therapistsByDepartment.map(([deptName, deptTherapists]) => {
+              const isEligible = eligibleDepartments.includes(deptName);
+              const isOpen = expandedDepts.has(deptName);
+              const selectedInDept = deptTherapists.filter((t) => selectedTherapists.includes(t.id)).length;
+              return (
+                <div
+                  key={deptName}
+                  className="overflow-hidden rounded-lg border border-[color:var(--border-light)] bg-card"
+                >
                   <button
-                    key={t.id}
                     type="button"
-                    onClick={() => toggleTherapist(t.id)}
-                    className="mr-1 rounded-md border px-2 py-1 text-xs"
+                    onClick={() => toggleDept(deptName)}
+                    aria-expanded={isOpen}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary"
                   >
-                    {t.name}
+                    <span
+                      aria-hidden
+                      className={`inline-block transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    >
+                      ▸
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">{deptName}</p>
+                      <p className="text-[11px] text-[color:var(--text-tertiary)]">
+                        {deptTherapists.length} therapist{deptTherapists.length === 1 ? "" : "s"}
+                        {selectedInDept > 0 ? ` · ${selectedInDept} selected` : ""}
+                      </p>
+                    </div>
+                    {isEligible ? (
+                      <span className="chip chip-success">Patient picked</span>
+                    ) : null}
                   </button>
-                ))}
-              </span>
-            </p>
-          ) : (
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {matchingTherapists.map((t) => {
-                // Surface why this therapist matches: their department maps
-                // back to one or more categories the patient picked.
-                const matchingCategories = categoriesForDepartment(t.department).filter(
-                  (c) => client.selectedCategories.includes(c.key),
-                );
-                const isSelected = selectedTherapists.includes(t.id);
-                const isPrimary = effectivePrimary === t.id;
-                return (
-                  <li
-                    key={t.id}
-                    className={`flex items-start gap-2 rounded-md border p-3 transition-colors ${
-                      isSelected ? "border-primary bg-secondary" : "hover:bg-accent"
-                    }`}
-                  >
-                    <label className="flex flex-1 cursor-pointer items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleTherapist(t.id)}
-                        className="mt-0.5 h-4 w-4"
-                      />
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium">{t.name}</p>
-                          {isPrimary ? (
-                            <Badge variant="info" className="text-[10px]">★ Primary</Badge>
-                          ) : null}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {t.designation ?? t.role} · {t.department ?? "—"}
-                        </p>
-                        {matchingCategories.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {matchingCategories.map((c) => (
-                              <Badge
-                                key={c.key}
-                                variant="success"
-                                className="text-[10px]"
-                                title={`Matches the patient's ${c.label} request`}
+                  {isOpen ? (
+                    <ul className="grid grid-cols-1 gap-1 border-t border-[color:var(--border-light)] bg-secondary/40 p-2 sm:grid-cols-2">
+                      {deptTherapists.map((t) => {
+                        const matchingCategories = categoriesForDepartment(t.department).filter(
+                          (c) => client.selectedCategories.includes(c.key),
+                        );
+                        const isSelected = selectedTherapists.includes(t.id);
+                        const isPrimary = effectivePrimary === t.id;
+                        return (
+                          <li
+                            key={t.id}
+                            className={`flex items-start gap-2 rounded-md border p-3 transition-colors ${
+                              isSelected
+                                ? "border-[color:var(--primary)] bg-card"
+                                : "border-transparent bg-card hover:border-[color:var(--border)]"
+                            }`}
+                          >
+                            <label className="flex flex-1 cursor-pointer items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleTherapist(t.id)}
+                                className="mt-0.5 h-4 w-4"
+                              />
+                              <div className="flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-medium">{t.name}</p>
+                                  {isPrimary ? (
+                                    <Badge variant="info" className="text-[10px]">★ Primary</Badge>
+                                  ) : null}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {t.designation ?? t.role}
+                                </p>
+                                {matchingCategories.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {matchingCategories.map((c) => (
+                                      <span
+                                        key={c.key}
+                                        className="chip chip-success"
+                                        title={`Matches the patient's ${c.label} request`}
+                                      >
+                                        ✓ {c.label}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </label>
+                            {isSelected && !isPrimary ? (
+                              <button
+                                type="button"
+                                onClick={() => setPrimaryId(t.id)}
+                                className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-1 text-[10px] font-medium text-[color:var(--text-secondary)] hover:border-primary hover:text-primary"
+                                title="Make this the primary therapist"
                               >
-                                ✓ {c.label}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </label>
-                    {isSelected && !isPrimary ? (
-                      <button
-                        type="button"
-                        onClick={() => setPrimaryId(t.id)}
-                        className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-1 text-[10px] font-medium text-[color:var(--text-secondary)] hover:border-primary hover:text-primary"
-                        title="Make this the primary therapist"
-                      >
-                        <Star className="h-3 w-3" /> Set primary
-                      </button>
-                    ) : null}
-                    {isPrimary ? (
-                      <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 px-2 py-1 text-[10px] font-semibold text-primary">
-                        <Star className="h-3 w-3 fill-current" /> Primary
-                      </span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                                <Star className="h-3 w-3" /> Set primary
+                              </button>
+                            ) : null}
+                            {isPrimary ? (
+                              <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 px-2 py-1 text-[10px] font-semibold text-primary">
+                                <Star className="h-3 w-3 fill-current" /> Primary
+                              </span>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </section>
 
         <section>
@@ -519,8 +567,11 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
   async function onScanFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) {
-      toast.error("File too large (max 4 MB)");
+    // 10 MB cap covers a typical 12-megapixel phone photo (~6 MB JPEG) and a
+    // multi-page A4 scan, without bloating the IntakeForm.signatureDataUrl
+    // column. Anything bigger should be compressed before upload.
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File too large (max 10 MB)");
       return;
     }
     const reader = new FileReader();

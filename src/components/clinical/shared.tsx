@@ -4,7 +4,6 @@
 // template component focused on its own data shape, not duplicated layout.
 
 import { useCallback } from "react";
-import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -43,26 +42,40 @@ export function Field({
   );
 }
 
+// `.clin-section` is defined in src/app/globals.css (Batch 1) — neumorphic
+// card recipe with a scroll-margin offset so anchor jumps from the section
+// rail land below the sticky header rather than under it. The id is slugged
+// from the title so each section is addressable as `section-{slug}` without
+// every caller having to thread an id prop through.
 export function Section({
   title,
   description,
   children,
+  id,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
+  id?: string;
 }) {
+  const sectionId = id ?? `section-${slug(title)}`;
   return (
-    <section className="space-y-3 rounded-md border bg-muted/20 p-4">
-      <div>
-        <p className="text-sm font-semibold">{title}</p>
-        {description ? (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        ) : null}
+    <section id={sectionId} className="clin-section">
+      <div className="clin-section-head">
+        <h2>{title}</h2>
+        {description ? <p className="clin-section-hint">{description}</p> : null}
       </div>
-      {children}
+      <div className="space-y-3">{children}</div>
     </section>
   );
+}
+
+function slug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 // ───────── Vitals + Comorbidities (shared by every consultation/followup) ─────────
@@ -423,68 +436,6 @@ export function RecommendationPicker({
             </li>
           ))}
         </ul>
-      ) : null}
-    </div>
-  );
-}
-
-// ───────── Save + render footer ─────────
-
-export function FormFooter({
-  pending,
-  isLocked,
-  isViewOnly,
-  activeId,
-  autoSaveStatus = "idle",
-  onSaveDraft,
-  onComplete,
-}: {
-  pending: boolean;
-  isLocked: boolean;
-  isViewOnly: boolean;
-  activeId: string | null;
-  autoSaveStatus?: "idle" | "saving" | "saved" | "error";
-  onSaveDraft: () => void;
-  onComplete: () => void;
-}) {
-  const disabled = pending || isLocked || isViewOnly;
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      {!isViewOnly && !isLocked && autoSaveStatus !== "idle" ? (
-        <span
-          className={cn(
-            "mr-auto text-xs",
-            autoSaveStatus === "error"
-              ? "text-destructive"
-              : "text-muted-foreground",
-          )}
-        >
-          {autoSaveStatus === "saving"
-            ? "Saving…"
-            : autoSaveStatus === "saved"
-              ? "Saved ✓"
-              : "Autosave failed — use Save draft"}
-        </span>
-      ) : null}
-      {activeId ? (
-        <a
-          href={`/api/consultations/${activeId}/render?format=pdf`}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
-        >
-          Open PDF
-        </a>
-      ) : null}
-      {!isViewOnly ? (
-        <>
-          <Button variant="outline" disabled={disabled} onClick={onSaveDraft}>
-            Save draft
-          </Button>
-          <Button disabled={disabled} onClick={onComplete}>
-            {isLocked ? "Locked" : pending ? "Saving…" : "Complete & lock"}
-          </Button>
-        </>
       ) : null}
     </div>
   );

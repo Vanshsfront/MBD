@@ -187,16 +187,17 @@ model Staff {
   centreId String?
   centre   Centre? @relation(fields: [centreId], references: [id])
 
-  consultations          Consultation[]
-  sessions               Session[]
-  alerts                 Alert[]
-  auditLogs              AuditLog[]
-  doctorAssignments      ClientDoctorAssignment[]
-  appointments           Appointment[]            @relation("TherapistAppointments")
-  notifications          Notification[]
-  changeRequestsMade     ChangeRequest[]          @relation("ChangeRequester")
-  changeRequestsReviewed ChangeRequest[]          @relation("ChangeReviewer")
-  intakeTokensCreated    IntakeToken[]            @relation("IntakeTokenCreator")
+  consultations           Consultation[]
+  sessions                Session[]
+  alerts                  Alert[]
+  auditLogs               AuditLog[]
+  doctorAssignments       ClientDoctorAssignment[]
+  appointments            Appointment[]            @relation("TherapistAppointments")
+  notifications           Notification[]
+  changeRequestsMade      ChangeRequest[]          @relation("ChangeRequester")
+  changeRequestsReviewed  ChangeRequest[]          @relation("ChangeReviewer")
+  intakeTokensCreated     IntakeToken[]            @relation("IntakeTokenCreator")
+  consultationAttachments ConsultationAttachment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -366,11 +367,37 @@ model Consultation {
   serviceId String?
   service   Service? @relation(fields: [serviceId], references: [id])
 
-  packages Package[]
+  packages    Package[]
+  attachments ConsultationAttachment[]
 
   date      DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─── CONSULTATION ATTACHMENT (versioned doctor write-ups) ─
+// Round-trip: render → doctor downloads → edits in Word → uploads back.
+// Each upload bumps the version counter for the same consultation; isCurrent
+// flips to false on older rows so the "current" version is always findable
+// in one indexed query. Files live in Supabase Storage at the storagePath.
+model ConsultationAttachment {
+  id             String       @id @default(cuid())
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  version        Int
+  filename       String
+  mimeType       String
+  sizeBytes      Int
+  storagePath    String // bucket-relative path; bucket name lives in code
+  notes          String?
+  isCurrent      Boolean      @default(true)
+
+  uploadedById String
+  uploadedBy   Staff  @relation(fields: [uploadedById], references: [id])
+
+  uploadedAt DateTime @default(now())
+
+  @@index([consultationId, version])
 }
 
 // ─── PACKAGE ─────────────────────────────────────────
@@ -378,7 +405,10 @@ model Package {
   id                String   @id @default(cuid())
   totalSessions     Int
   completedSessions Int      @default(0)
-  serviceMix        String // JSON: [{ serviceId, serviceName, count }]
+  // JSON: [{ serviceId, serviceName, count, consumed? }] — `consumed` is the
+  // per-service used counter (back-fills to 0 for legacy rows). Read-side
+  // code MUST default-coalesce since older rows pre-date the field.
+  serviceMix        String
   validFrom         DateTime
   validUntil        DateTime
   status            String   @default("ACTIVE") // ACTIVE | EXPIRED | COMPLETED | CANCELLED
@@ -393,8 +423,9 @@ model Package {
   consultationId String?
   consultation   Consultation? @relation(fields: [consultationId], references: [id])
 
-  sessions Session[]
-  invoices Invoice[]
+  sessions     Session[]
+  invoices     Invoice[]
+  appointments Appointment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -516,6 +547,13 @@ model Appointment {
 
   centreId String?
   centre   Centre? @relation(fields: [centreId], references: [id])
+
+  // Optional link to a package the booking should consume from. Set by the
+  // booking flow when the FO confirms "use 1 session from package?". The
+  // booking handler increments Package.completedSessions + the matching
+  // serviceMix consumed counter atomically.
+  packageId String?
+  package   Package? @relation(fields: [packageId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

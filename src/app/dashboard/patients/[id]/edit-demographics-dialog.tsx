@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PhoneField } from "@/components/ui/phone-field";
 import { readApiError } from "@/lib/error-messages";
 
 interface InitialClient {
@@ -148,13 +149,10 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
               />
             </Field>
             <Field id="phone" label="Phone *">
-              <Input
+              <PhoneField
                 id="phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={setPhone}
                 required
               />
             </Field>
@@ -256,12 +254,10 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
                 />
               </Field>
               <Field id="em-phone" label="Phone">
-                <Input
+                <PhoneField
                   id="em-phone"
-                  type="tel"
-                  inputMode="tel"
                   value={emPhone}
-                  onChange={(e) => setEmPhone(e.target.value)}
+                  onChange={setEmPhone}
                 />
               </Field>
               <Field id="em-rel" label="Relationship">

@@ -279,4 +279,302 @@ body {
     50% { opacity: 0.7; }
   }
   .animate-subtle-pulse { animation: subtle-pulse 2s ease-in-out infinite; }
+
+  /* ──────────────────────────────────────────────────────────────
+   * Design-handoff utility block (added 2026-05-29 from
+   * mbd-handoff bundle, mbd/project/mbd/styles.css). Layered
+   * alongside the existing legacy-port classes — none of the
+   * names collide with shadcn primitives or earlier utilities.
+   * Grouped by use site so future edits stay scoped.
+   * ────────────────────────────────────────────────────────────── */
+
+  /* Type — small uppercase eyebrow + tabular numerals */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Compact rounded chips — patient header, line meta, KPI sub-labels.
+   * Distinct from <Badge> (rectangular pill, taller) — chips are denser.
+   * `white-space: nowrap` keeps each chip on a single line so a long
+   * MRN/email/etc. doesn't break mid-token; flex-wrap on the parent
+   * handles row breaks instead. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 99px;
+    font-size: 11.5px;
+    font-weight: 500;
+    background: var(--secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-light);
+    white-space: nowrap;
+  }
+  /* Chips that genuinely need to wrap (e.g. long flag labels) get this
+   * escape hatch — opt-in, since the default is nowrap. */
+  .chip.chip-wrap { white-space: normal; }
+  .chip-primary { background: rgba(42,125,184,0.10); color: #185a8a; border-color: #cfe4f5; }
+  .chip-danger  { background: rgba(220,53,69,0.08); color: #a32230; border-color: #f4c8cd; }
+  .chip-success { background: rgba(22,163,74,0.08); color: #15683b; border-color: #cae9d5; }
+  .chip-warning { background: rgba(217,119,6,0.10); color: #a86420; border-color: #f3dfbd; }
+
+  /* Live indicator dot with halo pulse — autosave, queue waiting, etc. */
+  .dot { width: 6px; height: 6px; border-radius: 99px; display: inline-block; }
+  .dot.live { background: #16a34a; position: relative; }
+  .dot.live::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 99px;
+    background: #16a34a;
+    opacity: 0.4;
+    animation: dot-pulse 1.8s ease-out infinite;
+  }
+  @keyframes dot-pulse {
+    0% { transform: scale(0.6); opacity: 0.6; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+
+  /* ── Role dashboards — today strip + KPI tiles + sidelist (B2/B3) ── */
+  .fo-today {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 12px 18px;
+    background: rgba(255,255,255,0.65);
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px var(--border-light), 0 1px 2px var(--shadow-color);
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex-wrap: wrap;
+  }
+  .fo-today-item { display: inline-flex; align-items: center; gap: 6px; }
+  .fo-today-item strong {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    margin-right: 2px;
+  }
+  .fo-today-item .muted { color: var(--text-tertiary); font-size: 12px; }
+  .fo-today-item.warn strong, .fo-today-item .warn { color: #d97706; }
+  .fo-today-div { width: 1px; height: 14px; background: var(--border); }
+
+  .fo-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 900px) { .fo-stats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 520px) { .fo-stats { grid-template-columns: 1fr; } }
+
+  .fo-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+  @media (max-width: 1100px) { .fo-grid { grid-template-columns: 1fr; } }
+
+  .fo-list { display: flex; flex-direction: column; }
+  .fo-list-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .fo-list-row:last-child { border-bottom: 0; }
+  .fo-list-row:hover { background: var(--secondary); }
+
+  .stat-link {
+    padding: 16px 18px;
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px var(--border-light), 0 1px 2px var(--shadow-color);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .stat-link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px var(--border-light), 0 8px 24px -10px var(--shadow-color);
+  }
+  .stat-link-v { font-size: 28px; font-weight: 600; letter-spacing: -0.015em; }
+  .stat-link-cta { font-size: 11.5px; color: var(--primary); font-weight: 500; margin-top: 4px; }
+  .stat-link.is-emphasis { background: linear-gradient(180deg, #fff 0%, rgba(42,125,184,0.06) 100%); }
+  .stat-link.is-emphasis .stat-link-v { color: var(--primary); }
+
+  .quick-action {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: 9px;
+  }
+  .quick-action:hover { background: var(--secondary); }
+  .quick-action-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--secondary);
+    display: grid;
+    place-items: center;
+    color: var(--primary);
+  }
+
+  /* ── Density-aware tables (MIS, audit, sessions) (B8) ─────────── */
+  .tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  .tbl thead th {
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-light);
+    background: rgba(245,244,242,0.5);
+    position: sticky;
+    top: 0;
+  }
+  .tbl tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-primary);
+    vertical-align: middle;
+  }
+  .tbl tbody tr:last-child td { border-bottom: 0; }
+  .tbl tbody tr:hover td { background: rgba(245,244,242,0.5); }
+  .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tbl .muted { color: var(--text-secondary); }
+  .tbl-compact thead th { padding: 7px 12px; }
+  .tbl-compact tbody td { padding: 7px 12px; font-size: 12.5px; }
+
+  /* ── Clinical record — section rail + cards + autosave pill (B5) ─ */
+  .clin-section {
+    background: var(--card);
+    border-radius: var(--radius-xl);
+    box-shadow:
+      0 1px 2px 0 var(--shadow-color),
+      0 4px 16px -6px var(--shadow-color),
+      0 0 0 1px var(--border-light);
+    padding: 22px 24px;
+    scroll-margin-top: 96px;
+  }
+  .clin-section + .clin-section { margin-top: 14px; }
+  .clin-section-head {
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .clin-section-head h2 { font-size: 16px; margin: 0; }
+  .clin-section-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+
+  .clin-rail {
+    background: var(--card);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 0 0 1px var(--border-light), 0 1px 2px var(--shadow-color);
+    padding: 12px;
+    position: sticky;
+    top: 80px;
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .clin-rail-label {
+    padding: 0 8px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .clin-rail-label + .clin-rail-label { margin-top: 12px; }
+  .clin-rail-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: transparent;
+    border: 0;
+    text-align: left;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .clin-rail-item svg { color: var(--text-tertiary); flex-shrink: 0; }
+  .clin-rail-item:hover { background: var(--secondary); color: var(--text-primary); }
+  .clin-rail-item:hover svg { color: var(--text-secondary); }
+  .clin-rail-item.is-on {
+    background: var(--text-primary);
+    color: #fff;
+    font-weight: 500;
+  }
+  .clin-rail-item.is-on svg { color: #fff; }
+
+  .autosave {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 99px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  /* ── Invoice ledger + live receipt (B7) ───────────────────────── */
+  .ledger-line { border-bottom: 1px solid var(--border-light); }
+  .ledger-line:last-of-type { border-bottom: 0; }
+  .ledger-line.is-expanded { background: rgba(245,244,242,0.4); }
+
+  .receipt-wrap { position: sticky; top: 80px; }
+  .receipt {
+    background: var(--card);
+    border-radius: var(--radius-xl);
+    box-shadow:
+      0 1px 2px 0 var(--shadow-color),
+      0 4px 16px -6px var(--shadow-color),
+      0 0 0 1px var(--border-light);
+    padding: 22px 24px;
+  }
+  .receipt-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .receipt-brand { font-weight: 600; font-size: 14px; }
+  .receipt-sub { font-size: 11.5px; color: var(--text-tertiary); }
+  .receipt-divider { height: 1px; background: var(--border-light); margin: 14px 0; }
+  .receipt-row { display: flex; justify-content: space-between; gap: 16px; }
+  .receipt-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .receipt-tbl th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .receipt-tbl td { padding: 4px 0; vertical-align: top; }
+  .receipt-tbl .num { text-align: right; }
+  .receipt-totals { display: flex; flex-direction: column; gap: 4px; }
+  .receipt-trow { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); }
+  .receipt-grand {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-top: 6px;
+    border-top: 1px solid var(--border-light);
+    margin-top: 4px;
+  }
+  .receipt-foot { margin-top: 14px; font-size: 10.5px; color: var(--text-tertiary); text-align: center; }
 }

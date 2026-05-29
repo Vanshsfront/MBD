@@ -1,11 +1,17 @@
 "use client";
 
+// Intake QR generator + recent intakes list. Layout follows the 2026-05-29
+// Claude Design handoff (mbd/project/mbd/calendar-intake.jsx — IntakeStaff):
+//   - Top command bar: label input + Generate as one row (was scattered)
+//   - 2-col grid: active QR card + share-link card with "what patient sees"
+//   - Recent intakes as a .tbl tbl-compact table
+
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
+import { Link as LinkIcon, RefreshCw, Copy as CopyIcon, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { readApiError } from "@/lib/error-messages";
@@ -29,15 +35,11 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
   );
   const [label, setLabel] = useState("");
 
-  // `now` is a real timestamp (ms), re-synced every 30s so the "Expires in"
-  // countdown stays fresh and PENDING flips to EXPIRED visually. It's only ever
-  // set inside the effect (never during render) so react-hooks/purity stays
-  // happy; it starts at 0 so the server + first client render match (no
-  // hydration mismatch), then the effect syncs it immediately after mount.
-  const [now, setNow] = useState(0); // 0 = not yet synced on the client
+  // Real-time-ish "Expires in" countdown. Synced post-mount to avoid hydration
+  // mismatch — first render uses 0 (server-equivalent), then a 0ms timer
+  // refreshes immediately and a 30s interval keeps it ticking.
+  const [now, setNow] = useState(0);
   useEffect(() => {
-    // Sync immediately via a 0ms timer (deferred, so it isn't a synchronous
-    // setState in the effect body) and then every 30s.
     const sync = () => setNow(Date.now());
     const initial = setTimeout(sync, 0);
     const id = setInterval(sync, 30 * 1000);
@@ -88,101 +90,127 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
   }
 
   return (
-    <div className="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">New intake</h1>
-          <p className="text-sm text-muted-foreground">
-            Generate a QR code for a walk-in patient to fill the intake form on their phone.
-          </p>
-        </div>
-        <div className="flex items-end gap-2">
-          <div className="space-y-1">
-            <label
-              className="text-xs uppercase tracking-wide text-muted-foreground"
-              htmlFor="intake-label"
-            >
-              Label (optional)
-            </label>
-            <Input
-              id="intake-label"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Walk-in — Ramesh, 3pm"
-              className="w-56"
-              maxLength={60}
-              aria-describedby="intake-label-counter"
-            />
-            <p
-              id="intake-label-counter"
-              className="text-[10px] tabular-nums text-muted-foreground"
-            >
-              {label.length}/60
-            </p>
-          </div>
-          <Button onClick={generate} disabled={pending}>
-            {pending ? "Generating…" : "Generate QR"}
-          </Button>
-        </div>
+    <div className="space-y-4">
+      <header>
+        <p className="eyebrow">Patients</p>
+        <h1 className="text-2xl font-semibold tracking-tight">New intake</h1>
+        <p className="text-sm text-muted-foreground">
+          Generate a QR or share a link that the patient scans on their phone to fill the
+          intake form.
+        </p>
       </header>
 
-      <div className="grid gap-6 md:grid-cols-[360px_1fr]">
-        <ActiveTokenCard token={active} now={now} />
+      {/* Command bar — label + generate in a single inline row (audit n=6) */}
+      <Card>
+        <div className="p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <label
+                htmlFor="intake-label"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Label this intake (optional)
+              </label>
+              <Input
+                id="intake-label"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder='e.g. "Walk-in 10:30am · referred by ENT"'
+                maxLength={60}
+                aria-describedby="intake-label-counter"
+              />
+              <p
+                id="intake-label-counter"
+                className="text-[11px] tabular-nums text-[color:var(--text-tertiary)]"
+              >
+                {label.length}/60 · helps you find this intake later in the list below
+              </p>
+            </div>
+            <Button onClick={generate} disabled={pending} size="lg">
+              <RefreshCw className="h-4 w-4" aria-hidden /> {pending ? "Generating…" : "Generate new QR"}
+            </Button>
+          </div>
+        </div>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent intakes</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {tokens.length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  title="No intakes generated yet"
-                  description="Click Generate intake link to mint a QR code for the next walk-in."
-                />
-              </div>
-            ) : (
-              <ul className="divide-y">
-                {tokens.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex flex-wrap items-center justify-between gap-3 px-6 py-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <StatusBadge status={t.status} />
-                      <div>
-                        <p className="text-sm font-medium">
-                          {t.label ?? `${t.token.slice(0, 10)}…`}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Created {new Date(t.createdAt).toLocaleString()} ·{" "}
-                          {t.createdBy ?? "system"}
-                        </p>
-                      </div>
-                    </div>
-                    {t.status === "PENDING" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setActive(t)}
-                      >
-                        Show QR
-                      </Button>
-                    ) : t.clientId ? (
-                      <a
-                        href={`/dashboard/patients/${t.clientId}`}
-                        className="text-sm font-medium underline-offset-4 hover:underline"
-                      >
-                        View patient
-                      </a>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+      {/* QR + share link side-by-side */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <ActiveTokenCard token={active} now={now} />
+        <ShareLinkCard token={active} />
       </div>
+
+      {/* Recent intakes — table layout */}
+      <Card className="overflow-hidden p-0">
+        <div className="flex items-center justify-between border-b border-[color:var(--border-light)] px-5 py-4">
+          <h2 className="text-base font-semibold">Recent intakes</h2>
+        </div>
+        {tokens.length === 0 ? (
+          <EmptyState
+            title="No intakes generated yet"
+            description="Generate a QR above to mint your first intake link."
+            className="m-4 border-none p-6"
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="tbl tbl-compact">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Label</th>
+                  <th>Created</th>
+                  <th>Patient</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {tokens.map((t) => (
+                  <tr key={t.id}>
+                    <td className="muted font-mono text-[11.5px]">{t.token.slice(0, 12)}…</td>
+                    <td>{t.label ?? <span className="text-[color:var(--text-tertiary)]">—</span>}</td>
+                    <td className="muted tabular">{formatDateTime(t.createdAt)}</td>
+                    <td>
+                      {t.clientId ? (
+                        <a
+                          href={`/dashboard/patients/${t.clientId}`}
+                          className="text-foreground underline-offset-2 hover:underline"
+                        >
+                          Open patient
+                        </a>
+                      ) : (
+                        <span className="text-[color:var(--text-tertiary)]">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <StatusChip status={t.status} />
+                    </td>
+                    <td className="num">
+                      {t.status === "PENDING" ? (
+                        <button
+                          type="button"
+                          onClick={() => setActive(t)}
+                          className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-light)] px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                        >
+                          Show QR
+                        </button>
+                      ) : t.status === "COMPLETED" && t.clientId ? (
+                        <a
+                          href={`/dashboard/patients/${t.clientId}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-light)] px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                        >
+                          View <ExternalLink className="h-3 w-3" aria-hidden />
+                        </a>
+                      ) : (
+                        <span className="text-[color:var(--text-tertiary)]">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -191,54 +219,83 @@ function ActiveTokenCard({ token, now }: { token: TokenView | null; now: number 
   if (!token || token.status !== "PENDING") {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>QR code</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Click <strong>Generate QR</strong> to create an intake link. The patient scans it
-          on their phone and fills the form.
-        </CardContent>
+        <div className="p-6">
+          <h2 className="mb-2 text-base font-semibold">Active intake QR</h2>
+          <p className="text-sm text-muted-foreground">
+            Click <strong>Generate new QR</strong> above to mint a fresh code. The patient
+            scans it on their phone to fill the form.
+          </p>
+        </div>
       </Card>
     );
   }
 
-  const url = typeof window !== "undefined"
-    ? `${window.location.origin}/intake/${token.token}`
-    : `/intake/${token.token}`;
+  const url =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/intake/${token.token}`
+      : `/intake/${token.token}`;
 
-  // `now` is a ms timestamp synced by the parent (0 until the first client
-  // tick). While unsynced, show "…" rather than a bogus value.
   const minsLeft =
     now === 0
       ? null
       : Math.max(0, Math.floor((new Date(token.expiresAt).getTime() - now) / 60_000));
 
+  const chipVariant =
+    minsLeft == null
+      ? "chip"
+      : minsLeft === 0
+        ? "chip-danger"
+        : minsLeft <= 10
+          ? "chip-warning"
+          : "chip-success";
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div className="min-w-0">
-          <CardTitle className="truncate">{token.label ?? "Patient scans this"}</CardTitle>
-          {token.label ? (
-            <p className="text-xs text-muted-foreground">Patient scans this QR</p>
-          ) : null}
+      <div className="p-6">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Active intake QR</h2>
+          <span className={`chip ${chipVariant}`}>
+            {minsLeft == null ? "…" : minsLeft === 0 ? "expired" : `${minsLeft} min left`}
+          </span>
         </div>
-        <Badge variant={minsLeft != null && minsLeft > 5 ? "info" : "warning"}>
-          {minsLeft === null ? "…" : minsLeft === 0 ? "expired" : `${minsLeft} min left`}
-        </Badge>
-      </CardHeader>
-      <CardContent className="flex flex-col items-center gap-4 pb-6">
-        <div className="rounded-lg border bg-white p-4">
-          <QRCodeSVG value={url} size={280} />
+        <div className="grid place-items-center rounded-2xl bg-secondary p-6">
+          <div className="rounded-xl bg-white p-4 ring-1 ring-[color:var(--border-light)]">
+            <QRCodeSVG value={url} size={220} />
+          </div>
         </div>
-        <div className="w-full space-y-2">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">Or share this link</p>
-          <div className="flex gap-2">
-            <input
-              readOnly
-              value={url}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs font-mono shadow-sm"
-              onFocus={(e) => e.target.select()}
-            />
+        {token.label ? (
+          <p className="mt-3 text-center text-xs text-[color:var(--text-tertiary)]">
+            Labelled: {token.label}
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function ShareLinkCard({ token }: { token: TokenView | null }) {
+  const url =
+    token && typeof window !== "undefined"
+      ? `${window.location.origin}/intake/${token.token}`
+      : token
+        ? `/intake/${token.token}`
+        : "";
+
+  return (
+    <Card>
+      <div className="space-y-4 p-6">
+        <div>
+          <h2 className="mb-1 text-base font-semibold">Or share the link</h2>
+          <p className="text-xs text-muted-foreground">
+            Copy and paste into WhatsApp, SMS, or email. The patient lands on the intake form
+            directly.
+          </p>
+        </div>
+
+        {token ? (
+          <div className="flex items-center gap-2 rounded-lg border border-[color:var(--border)] bg-secondary px-3 py-2">
+            <LinkIcon className="h-3.5 w-3.5 shrink-0 text-[color:var(--text-tertiary)]" aria-hidden />
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">{url}</span>
             <Button
               type="button"
               variant="outline"
@@ -252,17 +309,47 @@ function ActiveTokenCard({ token, now }: { token: TokenView | null; now: number 
                 }
               }}
             >
-              Copy
+              <CopyIcon className="h-3 w-3" aria-hidden /> Copy
             </Button>
           </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Generate a QR first to get a share link.</p>
+        )}
+
+        <div className="border-t border-[color:var(--border-light)] pt-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            What the patient sees
+          </p>
+          <ul className="space-y-1 text-xs text-muted-foreground">
+            <li>2-page intake form (demographics + visit reasons)</li>
+            <li>Consent acknowledgement + cancellation policy</li>
+            <li>Auto-saves on every step; safe to refresh</li>
+            <li>You&apos;ll be notified here when they finish</li>
+          </ul>
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }
 
-function StatusBadge({ status }: { status: "PENDING" | "COMPLETED" | "EXPIRED" }) {
-  if (status === "PENDING") return <Badge variant="info">Pending</Badge>;
-  if (status === "COMPLETED") return <Badge variant="success">Completed</Badge>;
-  return <Badge variant="default">Expired</Badge>;
+function StatusChip({ status }: { status: "PENDING" | "COMPLETED" | "EXPIRED" }) {
+  if (status === "PENDING") {
+    return (
+      <span className="chip chip-primary">
+        <span className="dot live" aria-hidden /> Pending
+      </span>
+    );
+  }
+  if (status === "COMPLETED") return <span className="chip chip-success">Completed</span>;
+  return <span className="chip">Expired</span>;
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, isClinicalRole } from "@/lib/permissions";
@@ -6,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { FlagBadges } from "@/components/flag-badges";
 import { AccessBlocked } from "./access-blocked";
+import { PatientSubTabs } from "./patient-sub-tabs";
 
 export default async function PatientLayout({
   children,
@@ -21,7 +21,13 @@ export default async function PatientLayout({
 
   const client = await prisma.client.findUnique({
     where: { id },
-    include: {
+    select: {
+      firstName: true,
+      lastName: true,
+      clientCode: true,
+      status: true,
+      age: true,
+      sex: true,
       // Both assignments AND appointments scoped to me — a clinical user may
       // legitimately reach this page via either a (current/past) assignment
       // OR a (past/future) appointment. Only the truly-unrelated are blocked.
@@ -61,33 +67,49 @@ export default async function PatientLayout({
     { href: `/dashboard/patients/${id}/invoices`, label: "Invoices" },
   ];
 
+  const initials = `${client.firstName?.[0] ?? ""}${client.lastName?.[0] ?? ""}`.toUpperCase() || "?";
+  const ageSex = [client.age, client.sex].filter(Boolean).join(" · ");
+
   return (
     <div className="space-y-6">
-      {/* Sticky patient header — name, status, code, and flags stay visible
-        * across all sub-tab scrolling. Z-index keeps it above the children's
-        * content; the cream gradient under the dashboard backs the blur. */}
-      <header className="sticky top-0 z-20 -mx-6 space-y-3 border-b border-[color:var(--border-light)] bg-card/90 px-6 pb-3 pt-4 backdrop-blur lg:-mx-10 lg:px-10">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {client.firstName} {client.lastName}
-          </h1>
-          <Badge variant={client.status === "ACTIVE" ? "success" : "default"}>
-            {client.status}
-          </Badge>
-          <span className="text-sm text-muted-foreground">{client.clientCode}</span>
-          <FlagBadges flags={client.flags} />
+      {/* Sticky patient header — name, status, code, age/sex, flags stay
+        * visible across all sub-tab scrolling. Z-index sits above children
+        * but below the dashboard top bar. The cream gradient under the
+        * dashboard backs the blur. */}
+      <header className="sticky top-0 z-20 -mx-6 space-y-2.5 border-b border-[color:var(--border-light)] bg-card/90 px-6 pb-2.5 pt-3 backdrop-blur lg:-mx-10 lg:px-10">
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-secondary text-sm font-semibold text-[color:var(--text-primary)] ring-1 ring-inset ring-[color:var(--border)]"
+          >
+            {initials}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="truncate text-xl font-semibold tracking-tight">
+                {client.firstName} {client.lastName}
+              </h1>
+              <Badge variant={client.status === "ACTIVE" ? "success" : "default"}>
+                {client.status}
+              </Badge>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {ageSex ? <span className="chip">{ageSex}</span> : null}
+              <span className="chip font-mono">{client.clientCode}</span>
+            </div>
+          </div>
+          {client.flags.length > 0 ? (
+            <div className="hidden max-w-[40%] shrink-0 flex-wrap justify-end gap-1 sm:flex">
+              <FlagBadges flags={client.flags} max={3} />
+            </div>
+          ) : null}
         </div>
-        <nav className="flex flex-wrap gap-1">
-          {tabs.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className="border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-foreground"
-            >
-              {t.label}
-            </Link>
-          ))}
-        </nav>
+        {client.flags.length > 0 ? (
+          <div className="-mt-1 flex flex-wrap gap-1 sm:hidden">
+            <FlagBadges flags={client.flags} max={3} />
+          </div>
+        ) : null}
+        <PatientSubTabs tabs={tabs} />
       </header>
       {children}
     </div>

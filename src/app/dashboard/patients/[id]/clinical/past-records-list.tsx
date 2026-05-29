@@ -9,6 +9,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ConsultationAttachments } from "./consultation-attachments";
 
 interface PastConsultation {
   id: string;
@@ -16,6 +17,10 @@ interface PastConsultation {
   date: Date;
   status: string;
   consultant: { name: string } | null;
+  // Whether the current viewer is permitted to upload a new version. Pre-
+  // computed in the server entry (page.tsx) so the client component doesn't
+  // have to re-evaluate role + ownership.
+  canUpload: boolean;
 }
 
 interface Props {
@@ -82,36 +87,39 @@ export function PastRecordsList({ clientId, consentSigned, consultations }: Prop
               </li>
             ) : null}
             {consultations.map((c) => (
-              <li
-                key={c.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-6 py-3"
-              >
-                <div>
-                  <p className="text-sm font-medium">
-                    {TEMPLATE_LABELS[c.templateKey] ?? c.templateKey}
-                    {c.status === "LOCKED" ? (
-                      <Badge variant="warning" className="ml-2 text-[10px]">
-                        locked
-                      </Badge>
-                    ) : null}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(c.date).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                    {c.consultant ? ` · ${c.consultant.name}` : ""}
-                  </p>
+              <li key={c.id}>
+                <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {TEMPLATE_LABELS[c.templateKey] ?? c.templateKey}
+                      {c.status === "LOCKED" ? (
+                        <Badge variant="warning" className="ml-2 text-[10px]">
+                          locked
+                        </Badge>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(c.date).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                      {c.consultant ? ` · ${c.consultant.name}` : ""}
+                    </p>
+                  </div>
+                  <a
+                    href={`/api/consultations/${c.id}/render?format=pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent"
+                  >
+                    System-rendered PDF
+                  </a>
                 </div>
-                <a
-                  href={`/api/consultations/${c.id}/render?format=pdf`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent"
-                >
-                  Download PDF
-                </a>
+                <ConsultationAttachments
+                  consultationId={c.id}
+                  canUpload={c.canUpload}
+                />
               </li>
             ))}
           </ul>
