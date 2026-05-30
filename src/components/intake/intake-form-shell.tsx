@@ -15,9 +15,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PhoneField } from "@/components/ui/phone-field";
+import { PhoneField, phoneNationalDigits, validatePhone } from "@/components/ui/phone-field";
+import { DateField } from "@/components/ui/date-field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/lib/categories";
+import { TermsModal } from "@/components/intake/terms-modal";
 
 export type IntakeSex = "" | "M" | "F" | "OTHER";
 
@@ -42,6 +44,7 @@ export interface IntakeFormState {
   liabilityWaiver: boolean;
   commercialTerms: boolean;
   cancellationPolicy: boolean;
+  agreedToTerms: boolean;
 }
 
 export type IntakeFieldErrors = Partial<Record<keyof IntakeFormState, string>>;
@@ -67,6 +70,7 @@ export const INITIAL_INTAKE_FORM: IntakeFormState = {
   liabilityWaiver: false,
   commercialTerms: false,
   cancellationPolicy: false,
+  agreedToTerms: false,
 };
 
 export type IntakePayload = {
@@ -91,6 +95,7 @@ export type IntakePayload = {
   liabilityWaiver: true;
   commercialTerms: true;
   cancellationPolicy: true;
+  agreedToTerms: true;
 };
 
 type Page = 1 | 2;
@@ -101,10 +106,13 @@ function validatePage(form: IntakeFormState, page: Page): IntakeFieldErrors {
     if (!form.firstName.trim()) errs.firstName = "First name is required.";
     if (!form.lastName.trim()) errs.lastName = "Surname is required.";
     if (!form.phone.trim()) errs.phone = "Phone is required.";
-    else if (form.phone.replace(/\D/g, "").length < 7)
-      errs.phone = "Enter a valid phone number.";
+    else {
+      const phoneErr = validatePhone(form.phone);
+      if (phoneErr) errs.phone = phoneErr;
+    }
     if (!form.email.trim()) errs.email = "Email is required.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+    // Stricter: require TLD of 2+ chars (rejects foo@bar, foo@bar.x).
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim().toLowerCase()))
       errs.email = "Enter a valid email address.";
     if (!form.dob) errs.dob = "Date of birth is required.";
     else {
@@ -122,6 +130,18 @@ function validatePage(form: IntakeFormState, page: Page): IntakeFieldErrors {
       errs.emergencyName = "Emergency contact name is required.";
     if (!form.emergencyPhone.trim())
       errs.emergencyPhone = "Emergency contact phone is required.";
+    else {
+      const ePhoneErr = validatePhone(form.emergencyPhone);
+      if (ePhoneErr) errs.emergencyPhone = ePhoneErr;
+      // Emergency contact must be a different person — same-number bookings
+      // tend to be a data-entry mistake (forgot to enter parent/spouse).
+      else if (
+        phoneNationalDigits(form.phone) !== "" &&
+        phoneNationalDigits(form.phone) === phoneNationalDigits(form.emergencyPhone)
+      )
+        errs.emergencyPhone =
+          "Emergency contact phone must be different from the patient's phone.";
+    }
     if (!form.emergencyRelationship.trim())
       errs.emergencyRelationship = "Relationship is required.";
   }
@@ -132,6 +152,7 @@ function validatePage(form: IntakeFormState, page: Page): IntakeFieldErrors {
     if (!form.liabilityWaiver) errs.liabilityWaiver = "Required to proceed.";
     if (!form.commercialTerms) errs.commercialTerms = "Required to proceed.";
     if (!form.cancellationPolicy) errs.cancellationPolicy = "Required to proceed.";
+    if (!form.agreedToTerms) errs.agreedToTerms = "Required to proceed.";
   }
   return errs;
 }
@@ -170,6 +191,7 @@ function buildPayload(form: IntakeFormState, computedAge: string): IntakePayload
     liabilityWaiver: true,
     commercialTerms: true,
     cancellationPolicy: true,
+    agreedToTerms: true,
   };
 }
 
@@ -398,13 +420,14 @@ function PageOne({
             />
           </Field>
           <Field label="Date of birth *" error={errors.dob}>
-            <Input
-              type="date"
+            <DateField
               value={form.dob}
-              onChange={(e) => update("dob", e.target.value)}
-              onBlur={() => blur("dob")}
+              onChange={(v) => {
+                update("dob", v);
+                blur("dob");
+              }}
               max={new Date().toISOString().slice(0, 10)}
-              aria-invalid={Boolean(errors.dob)}
+              invalid={Boolean(errors.dob)}
               required
             />
           </Field>
@@ -525,6 +548,7 @@ function PageTwo({
   update,
   toggleCategory,
 }: PageProps & { toggleCategory: (k: ServiceCategoryKey) => void }) {
+  const [termsOpen, setTermsOpen] = useState(false);
   return (
     <div className="space-y-4">
       <Card>
@@ -595,8 +619,42 @@ function PageTwo({
             onChange={(v) => update("cancellationPolicy", v)}
             label="Patient acknowledges the cancellation policy: ≥4 hours' notice, or by 8 PM the previous day for morning slots."
           />
+          {/* 5th ack — full T&C, opened in-place via the link. */}
+          <div className="space-y-1">
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-accent ${
+                errors.agreedToTerms ? "border-destructive" : "border-input"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={form.agreedToTerms}
+                onChange={(e) => update("agreedToTerms", e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span className="text-sm">
+                I agree to the{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTermsOpen(true);
+                  }}
+                >
+                  terms and conditions
+                </button>
+                .
+              </span>
+            </label>
+            {errors.agreedToTerms ? (
+              <p className="ml-6 text-xs text-destructive">{errors.agreedToTerms}</p>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
+      <TermsModal open={termsOpen} onOpenChange={setTermsOpen} />
     </div>
   );
 }

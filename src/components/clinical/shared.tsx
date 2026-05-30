@@ -444,3 +444,35 @@ export function RecommendationPicker({
 export function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+// ───────── Session protocol (every clinical form) ─────────
+// Free-text textarea: what the therapist actually did this session — exercise
+// list, modalities, progressions, etc. Distinct from `treatmentProtocol`
+// (long-term plan) and from session notes (subjective response). Persists
+// in Consultation.formData.sessionProtocol (no schema column needed —
+// formData is already JSON).
+export function SessionProtocolField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Section
+      title="Session protocol"
+      description="Plan / approach used in this session — exercises, modalities, progressions."
+    >
+      <textarea
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        rows={4}
+        className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--ring)] disabled:cursor-not-allowed disabled:opacity-50"
+        placeholder="e.g. 3×10 squats, hip mobility flow, theraband side-steps, 10 min cupping mid-back…"
+      />
+    </Section>
+  );
+}

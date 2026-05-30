@@ -42,6 +42,10 @@ export default async function ClinicalPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!hasPermission(session.user.role, "patients:view_assigned")) redirect("/dashboard");
+  // Front office never sees clinical records — only consultation/treatment
+  // notes are sensitive; FO retains everything else (intake, calendar,
+  // packages, billing). Direct-URL access bounces back to patient overview.
+  if (session.user.role === "FRONT_OFFICE") redirect(`/dashboard/patients/${id}`);
 
   const client = await prisma.client.findUnique({
     where: { id },
@@ -99,9 +103,15 @@ export default async function ClinicalPage({
   const ownEnded = client.doctorAssignments.find(
     (a) => a.staffId === session.user.id && a.endedAt !== null,
   );
+  // Consultants typically aren't in doctorAssignments — they touch a patient
+  // by performing a Consultation. Treat any past consultation by this user
+  // as "they own this record" for access purposes.
+  const ownedConsultation = pastConsultations.some(
+    (c) => c.consultantId === session.user.id,
+  );
 
-  // Clinical roles: neither active nor ended assignment → not theirs at all.
-  if (isClinical && !ownActive && !ownEnded) {
+  // Clinical roles: no assignment AND no consultation → not theirs at all.
+  if (isClinical && !ownActive && !ownEnded && !ownedConsultation) {
     redirect("/dashboard/patients");
   }
 
@@ -186,20 +196,6 @@ export default async function ClinicalPage({
     select: { id: true, name: true, basePrice: true, gstRate: true, participantCount: true },
   });
 
-  // Centre-scoped InventoryItems with stock > 0 — for the consume-in-session
-  // widget on the clinical form (PRD §4 C5).
-  const inventory = client.centreId
-    ? await prisma.inventoryItem.findMany({
-        where: { centreId: client.centreId, stock: { gt: 0 } },
-        orderBy: { product: { name: "asc" } },
-        select: {
-          id: true,
-          stock: true,
-          product: { select: { name: true, hsnSacCode: true } },
-        },
-      })
-    : [];
-
   // Gate the blank consultation form behind "Start consultation" for
   // clinical roles unless they already have a DRAFT in this template family
   // (in which case auto-resume) or the page was opened with ?consult=1.
@@ -268,12 +264,6 @@ export default async function ClinicalPage({
             basePrice: s.basePrice,
             gstRate: s.gstRate,
             participantCount: s.participantCount,
-          }))}
-          inventory={inventory.map((it) => ({
-            inventoryItemId: it.id,
-            productName: it.product.name,
-            stock: it.stock,
-            hsnSac: it.product.hsnSacCode ?? "",
           }))}
         />
       ) : (

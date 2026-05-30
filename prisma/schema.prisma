@@ -188,17 +188,19 @@ model Staff {
   centreId String?
   centre   Centre? @relation(fields: [centreId], references: [id])
 
-  consultations           Consultation[]
-  sessions                Session[]
-  alerts                  Alert[]
-  auditLogs               AuditLog[]
-  doctorAssignments       ClientDoctorAssignment[]
-  appointments            Appointment[]            @relation("TherapistAppointments")
-  notifications           Notification[]
-  changeRequestsMade      ChangeRequest[]          @relation("ChangeRequester")
-  changeRequestsReviewed  ChangeRequest[]          @relation("ChangeReviewer")
-  intakeTokensCreated     IntakeToken[]            @relation("IntakeTokenCreator")
-  consultationAttachments ConsultationAttachment[]
+  consultations              Consultation[]
+  sessions                   Session[]
+  alerts                     Alert[]
+  auditLogs                  AuditLog[]
+  doctorAssignments          ClientDoctorAssignment[]
+  appointments               Appointment[]            @relation("TherapistAppointments")
+  notifications              Notification[]
+  changeRequestsMade         ChangeRequest[]          @relation("ChangeRequester")
+  changeRequestsReviewed     ChangeRequest[]          @relation("ChangeReviewer")
+  intakeTokensCreated        IntakeToken[]            @relation("IntakeTokenCreator")
+  consultationAttachments    ConsultationAttachment[]
+  packageSuggestionsMade     PackageSuggestion[]      @relation("PackageSuggestionSuggester")
+  packageSuggestionsResolved PackageSuggestion[]      @relation("PackageSuggestionResolver")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -223,6 +225,11 @@ model Client {
   emergencyContact String? // JSON: name, phone, relationship
   status           String    @default("DRAFT") // DRAFT | ACTIVE | INACTIVE
 
+  // Walk-in placeholder flag. PENDING_INTAKE = stub created by FO at booking
+  // time, the patient still has to fill the intake form on arrival. Flipped
+  // to COMPLETED by the intake-submit handler once the form is signed.
+  intakeStatus String @default("COMPLETED") // PENDING_INTAKE | COMPLETED
+
   visitReasons String? // JSON array
 
   customerType     String? // WALK_IN | BOOKING | REFERRAL
@@ -235,18 +242,19 @@ model Client {
   centreId String?
   centre   Centre? @relation(fields: [centreId], references: [id])
 
-  intakeForms       IntakeForm[]
-  medicalHistories  MedicalHistory[]
-  consultations     Consultation[]
-  packages          Package[]
-  sessions          Session[]
-  invoices          Invoice[]
-  alerts            Alert[]
-  flags             ClientFlag[]
-  doctorAssignments ClientDoctorAssignment[]
-  appointments      Appointment[]
-  misEntries        MisEntry[]
-  portalTokens      ClientPortalToken[]
+  intakeForms        IntakeForm[]
+  medicalHistories   MedicalHistory[]
+  consultations      Consultation[]
+  packages           Package[]
+  packageSuggestions PackageSuggestion[]
+  sessions           Session[]
+  invoices           Invoice[]
+  alerts             Alert[]
+  flags              ClientFlag[]
+  doctorAssignments  ClientDoctorAssignment[]
+  appointments       Appointment[]
+  misEntries         MisEntry[]
+  portalTokens       ClientPortalToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -432,6 +440,29 @@ model Package {
   updatedAt DateTime @updatedAt
 }
 
+// ─── PACKAGE SUGGESTION (therapist → FO queue) ───────
+// Therapist/consultant doesn't create packages themselves — they push a
+// free-text suggestion to FO. FO sees pending ones at the top of /packages
+// and either accepts (opens create-package dialog pre-filled) or dismisses.
+model PackageSuggestion {
+  id     String @id @default(cuid())
+  note   String
+  status String @default("PENDING") // PENDING | ACCEPTED | DISMISSED
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  suggestedByStaffId String
+  suggestedByStaff   Staff  @relation("PackageSuggestionSuggester", fields: [suggestedByStaffId], references: [id])
+
+  resolvedAt        DateTime?
+  resolvedByStaffId String?
+  resolvedByStaff   Staff?    @relation("PackageSuggestionResolver", fields: [resolvedByStaffId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ─── SESSION (a single delivered service) ────────────
 model Session {
   id              String   @id @default(cuid())
@@ -474,7 +505,7 @@ model Invoice {
   subtotal    Float
   totalGst    Float
   totalAmount Float
-  paidAmount  Float  @default(0)
+  paidAmount  Float @default(0)
 
   discountPercent Float  @default(0)
   discountAmount  Float  @default(0)
@@ -536,6 +567,10 @@ model Appointment {
   cancelledReason String?
   cancelledAt     DateTime?
   cancelledById   String?
+
+  // Required tag when status flips to CANCELLED. Free-text cancelledReason
+  // stays for additional notes.
+  cancellationCategory String? // NO_SHOW | PATIENT_CANCELLED | THERAPIST_CANCELLED_SHIFT
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
@@ -610,10 +645,10 @@ model Promotion {
 
 // ─── REFERRAL SOURCE ─────────────────────────────────
 model ReferralSource {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  isActive  Boolean  @default(true)
-  sortOrder Int      @default(0)
+  id        String  @id @default(cuid())
+  name      String  @unique
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
 
   clients Client[]
 

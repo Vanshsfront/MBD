@@ -14,6 +14,10 @@ export default async function PackagesPage({
   const { id } = await params;
   const session = await auth();
   if (!session?.user) redirect("/login");
+  // Therapists never see the packages page — they get a compact session-count
+  // chip on the patient detail page and a "Suggest package" button instead.
+  // FO handles package creation, usage, pricing, service-mix.
+  if (session.user.role === "THERAPIST") redirect(`/dashboard/patients/${id}`);
   if (!hasPermission(session.user.role, "billing:view_packages")) redirect("/dashboard");
 
   const client = await prisma.client.findUnique({ where: { id } });

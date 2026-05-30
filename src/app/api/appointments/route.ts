@@ -50,6 +50,12 @@ function parseMix(json: string | null | undefined): ServiceMixEntry[] {
   }
 }
 
+const CANCELLATION_CATEGORIES = [
+  "NO_SHOW",
+  "PATIENT_CANCELLED",
+  "THERAPIST_CANCELLED_SHIFT",
+] as const;
+
 const updateSchema = z.object({
   id: z.string().min(1),
   startTime: z.string().datetime().optional(),
@@ -59,6 +65,8 @@ const updateSchema = z.object({
     .optional(),
   cancelledBy: z.enum(["PATIENT", "THERAPIST", "CLINIC"]).optional(),
   cancelledReason: z.string().max(500).optional(),
+  // Required tag when transitioning to CANCELLED. Server enforces below.
+  cancellationCategory: z.enum(CANCELLATION_CATEGORIES).optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -335,6 +343,21 @@ export async function PATCH(req: Request) {
   const existing = await prisma.appointment.findUnique({ where: { id: f.id } });
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  // Cancellation must be tagged — required so we can report on why slots
+  // were lost (patient no-show vs therapist shift vs patient cancellation).
+  // Skip the guard if the existing row is already cancelled (idempotent
+  // PATCHes that just refresh notes shouldn't get blocked).
+  if (
+    f.status === "CANCELLED" &&
+    existing.status !== "CANCELLED" &&
+    !f.cancellationCategory
+  ) {
+    return NextResponse.json(
+      { error: "cancellation_category_required" },
+      { status: 400 },
+    );
+  }
+
   const newStart = f.startTime ? new Date(f.startTime) : existing.startTime;
   const newEnd = f.endTime ? new Date(f.endTime) : existing.endTime;
   let warning: string | undefined;
@@ -367,6 +390,9 @@ export async function PATCH(req: Request) {
       ...(f.status ? { status: f.status } : {}),
       ...(f.cancelledBy ? { cancelledBy: f.cancelledBy, cancelledAt: new Date(), cancelledById: auth.user.id } : {}),
       ...(f.cancelledReason !== undefined ? { cancelledReason: f.cancelledReason } : {}),
+      ...(f.cancellationCategory !== undefined
+        ? { cancellationCategory: f.cancellationCategory }
+        : {}),
       ...(f.notes !== undefined ? { notes: f.notes } : {}),
     },
   });
@@ -399,6 +425,60 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ ok: true, appointment: serialise(updated), warning });
 }
 
+// Hard-delete an appointment booked by mistake. Soft-cancel (PATCH with
+// status=CANCELLED) is the right path for genuine cancellations — this is
+// strictly for "shouldn't have been booked at all". Gated to ≤24h after
+// createdAt so we don't lose history of older operational mistakes.
+const DELETE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DELETE_ALLOWED_ROLES = new Set(["OWNER", "ADMIN", "FRONT_OFFICE"]);
+
+export async function DELETE(req: Request) {
+  const auth = await requireAuth();
+  if (!auth.ok) return auth.response;
+  if (!DELETE_ALLOWED_ROLES.has(auth.user.role)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "id_required" }, { status: 400 });
+  }
+
+  const existing = await prisma.appointment.findUnique({
+    where: { id },
+    select: { id: true, createdAt: true, clientId: true, therapistId: true, startTime: true },
+  });
+  if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  if (Date.now() - existing.createdAt.getTime() > DELETE_WINDOW_MS) {
+    return NextResponse.json(
+      { error: "delete_window_expired" },
+      { status: 409 },
+    );
+  }
+
+  await prisma.appointment.delete({ where: { id } });
+
+  const meta = requestMeta(req);
+  await createAuditLog({
+    action: "DELETE",
+    entity: "Appointment",
+    entityId: id,
+    performedById: auth.user.id,
+    metadata: {
+      reason: "booked_by_mistake",
+      clientId: existing.clientId,
+      therapistId: existing.therapistId,
+      startTime: existing.startTime.toISOString(),
+    },
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
 export async function GET(req: Request) {
   const auth = await requireAuth();
   if (!auth.ok) return auth.response;
@@ -428,6 +508,7 @@ export async function GET(req: Request) {
           firstName: true,
           lastName: true,
           clientCode: true,
+          intakeStatus: true,
           flags: {
             where: { isActive: true },
             select: { type: true, label: true, color: true },
@@ -445,17 +526,26 @@ export async function GET(req: Request) {
   const clashedIds = computeClashes(appointments);
 
   // Pending RESCHEDULE change requests — surface a chip on the event so the
-  // FO sees at-a-glance "patient/therapist wants to move this". Stored in
-  // ChangeRequest.details JSON as { appointmentId }.
+  // FO sees at-a-glance "patient/therapist wants to move this". New
+  // change-requests live in `payloadJson` (structured); older ones in
+  // `details` (legacy free-text JSON). Read both so the chip surfaces on
+  // legacy AND new requests.
   const pendingReschedules = await prisma.changeRequest.findMany({
     where: { status: "PENDING", type: "RESCHEDULE" },
-    select: { details: true },
+    select: { details: true, payloadJson: true },
   });
   const pendingApptIds = new Set<string>();
   for (const r of pendingReschedules) {
     try {
-      const parsed = JSON.parse(r.details) as { appointmentId?: string };
-      if (parsed.appointmentId) pendingApptIds.add(parsed.appointmentId);
+      if (r.payloadJson) {
+        const parsed = JSON.parse(r.payloadJson) as { appointmentId?: string };
+        if (parsed.appointmentId) {
+          pendingApptIds.add(parsed.appointmentId);
+          continue;
+        }
+      }
+      const legacy = JSON.parse(r.details) as { appointmentId?: string };
+      if (legacy.appointmentId) pendingApptIds.add(legacy.appointmentId);
     } catch {
       /* skip malformed */
     }
@@ -481,6 +571,12 @@ export async function GET(req: Request) {
       flags: a.client.flags ?? [],
       hasClash: clashedIds.has(a.id),
       pendingReschedule: pendingApptIds.has(a.id),
+      intakePending: a.client.intakeStatus === "PENDING_INTAKE",
+      // "Delete (booked by mistake)" is only allowed within 24h of creation.
+      // Surface that here so the UI can hide the button outside the window
+      // instead of hitting the server and getting a 409.
+      canDelete:
+        Date.now() - a.createdAt.getTime() <= 24 * 60 * 60 * 1000,
     })),
   );
 }

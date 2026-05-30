@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import SignaturePad from "signature_pad";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -791,6 +792,7 @@ function IntakeOnBehalfPanel({
   client: DraftClient;
   onCaptured: (intakeFormId: string, categories: ServiceCategoryKey[]) => void;
 }) {
+  const [showInlineForm, setShowInlineForm] = useState(false);
   const initial: Partial<IntakeFormState> = {
     firstName: client.firstName ?? "",
     lastName: client.lastName ?? "",
@@ -827,16 +829,55 @@ function IntakeOnBehalfPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          This walk-in didn&apos;t fill the QR form. Capture their intake here — they&apos;ll sign
-          the consent at the end after you assign a therapist.
-        </div>
-        <IntakeFormShell
-          variant="inline"
-          submitLabel="Save intake →"
-          initial={initial}
-          onSubmit={onSubmit}
-        />
+        {!showInlineForm ? (
+          <div className="space-y-3 rounded-md border border-[color:var(--border-light)] bg-card p-5">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold">Send the intake link to the patient (preferred)</p>
+              <p className="text-xs text-muted-foreground">
+                Patients fill their own intake — keeps the data accurate and the patient&apos;s
+                agreement first-hand. Generate a QR / link from the New intake page (top of the
+                sidebar), share it with the patient on WhatsApp / SMS, and they&apos;ll appear in
+                this queue when they&apos;re done.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/dashboard/intake"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-foreground px-4 text-sm font-medium text-background hover:opacity-90"
+              >
+                Open New intake →
+              </Link>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Fill the intake form on behalf of the patient?\n\nUse only when the patient is unable to fill it themselves — they should still review and sign the consent at the end.",
+                    )
+                  ) {
+                    setShowInlineForm(true);
+                  }
+                }}
+              >
+                Fill on behalf (fallback)
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Filling on behalf — patient still signs the consent at the end. Prefer the patient
+              fills it themselves via the intake link whenever possible.
+            </div>
+            <IntakeFormShell
+              variant="inline"
+              submitLabel="Save intake →"
+              initial={initial}
+              onSubmit={onSubmit}
+            />
+          </>
+        )}
       </CardContent>
     </Card>
   );

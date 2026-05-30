@@ -13,7 +13,6 @@ interface State {
   riskNotes: string;
   primaryGoal: string;
   secondaryGoals: string;
-  consent: { confidentiality?: string; cancellation?: string; truth?: string };
 }
 
 export function CounsellingIntakeForm({ formData, setFormData, disabled }: ClinicalFormProps) {
@@ -132,28 +131,6 @@ export function CounsellingIntakeForm({ formData, setFormData, disabled }: Clini
               disabled={disabled}
             />
           </Field>
-        </div>
-      </Section>
-
-      <Section title="Consent">
-        <div className="space-y-2">
-          {(
-            [
-              { key: "confidentiality", label: "Sessions are confidential except where mandated reporting applies." },
-              { key: "cancellation", label: "Accept the cancellation policy." },
-              { key: "truth", label: "Information above is accurate." },
-            ] as const
-          ).map((it) => (
-            <label key={it.key} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={data.consent?.[it.key] === "☑"}
-                onChange={(e) => setBox("consent", it.key, e.target.checked)}
-                disabled={disabled}
-              />
-              {it.label}
-            </label>
-          ))}
         </div>
       </Section>
     </div>

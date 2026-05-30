@@ -19,7 +19,14 @@ import { CATEGORY_KEYS } from "@/lib/categories";
 const intakeSchema = z.object({
   firstName: z.string().trim().min(1, "first_name_required").max(80),
   lastName: z.string().trim().min(1, "last_name_required").max(80),
-  email: z.string().trim().email("email_invalid").max(120),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("email_invalid")
+    // Reject single-character TLDs (foo@bar.x) — Zod's .email() allows them.
+    .regex(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/, "email_invalid")
+    .max(120),
   phone: z.string().trim().min(7, "phone_required").max(40),
   dob: z
     .string()
@@ -51,7 +58,20 @@ const intakeSchema = z.object({
   liabilityWaiver: z.literal(true, { message: "liability_required" }),
   commercialTerms: z.literal(true, { message: "commercial_required" }),
   cancellationPolicy: z.literal(true, { message: "cancellation_required" }),
-});
+  agreedToTerms: z.literal(true, { message: "terms_required" }),
+}).refine(
+  // Emergency contact must be a different number — server-side mirror of the
+  // UI rule. Compare digits only so "+91 9876543210" and "9876543210" match.
+  (data) => {
+    const a = data.phone.replace(/\D/g, "");
+    const b = data.emergencyPhone.replace(/\D/g, "");
+    return !a || !b || a !== b;
+  },
+  {
+    message: "emergency_phone_must_differ",
+    path: ["emergencyPhone"],
+  },
+);
 
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;

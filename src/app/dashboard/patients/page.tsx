@@ -42,13 +42,16 @@ export default async function PatientsPage({
   const me = session.user.id;
   const now = new Date();
 
-  // Clinical scoping (PRD §3.2 Q1): patients connected to me via either an
-  // assignment (current or past) or any appointment, never anyone else's.
+  // Clinical scoping (PRD §3.2 Q1): patients connected to me via assignment
+  // (current or past), any appointment, OR any consultation I performed.
+  // Consultants in particular rarely sit in doctorAssignments — the
+  // consultation record is the relationship.
   const clinicalScope = restrictToOwn
     ? {
         OR: [
           { doctorAssignments: { some: { staffId: me } } },
           { appointments: { some: { therapistId: me } } },
+          { consultations: { some: { consultantId: me } } },
         ],
       }
     : {};
@@ -237,6 +240,19 @@ export default async function PatientsPage({
                       <td>
                         <div className="flex flex-wrap items-center gap-1">
                           <FlagBadges flags={c.flags} max={2} />
+                          {c.intakeStatus === "PENDING_INTAKE" ? (
+                            <span
+                              className="chip"
+                              style={{
+                                backgroundColor: "#fef3c7",
+                                color: "#854d0e",
+                                borderColor: "#fde68a",
+                              }}
+                              title="Walk-in stub — complete the intake form when the patient arrives."
+                            >
+                              Intake pending
+                            </span>
+                          ) : null}
                           {c.status === "INACTIVE" ? (
                             <Badge variant="outline">INACTIVE</Badge>
                           ) : null}
