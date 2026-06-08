@@ -121,7 +121,10 @@ const THERAPIST_PERMS: readonly Permission[] = [
   "patients:edit_clinical_record_own",
   "appointments:view_calendar_all",
   "appointments:request_change",
-  "billing:view_packages",
+  // No billing:view_packages — therapists see only a session-count chip on
+  // the patient detail page; FO handles package details/creation/pricing.
+  // Therapists post free-text suggestions via /api/package-suggestions
+  // instead.
 ];
 
 const DEV_PERMS: readonly Permission[] = ALL_PERMISSIONS;

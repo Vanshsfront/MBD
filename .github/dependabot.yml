@@ -1,0 +1,48 @@
+# Dependabot configuration — free, GitHub-native, no extra infrastructure.
+# Reference: audit-2026-06-06 SUPPLY-004 (Medium).
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 5
+    groups:
+      # Group safe minor/patch updates so we get one PR per ecosystem area
+      # rather than 20 noisy PRs per week.
+      radix:
+        patterns:
+          - "@radix-ui/*"
+      fullcalendar:
+        patterns:
+          - "@fullcalendar/*"
+      types:
+        patterns:
+          - "@types/*"
+    ignore:
+      # Major bumps for these need manual planning.
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@prisma/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "prisma"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"

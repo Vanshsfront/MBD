@@ -33,6 +33,7 @@ import {
 import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
 import { readableTextColor } from "@/lib/staff-colors";
+import { WalkInAppointmentDialog } from "./walk-in-dialog";
 
 // How many therapist colours the legend shows before "Show all".
 const LEGEND_COLLAPSED_COUNT = 6;
@@ -78,6 +79,10 @@ interface AppointmentEvent {
   flags: ReadonlyArray<{ type: string; label: string; color: string | null }>;
   hasClash: boolean;
   pendingReschedule: boolean;
+  /** Walk-in stub — patient hasn't done intake yet. Rendered with a yellow ring. */
+  intakePending: boolean;
+  /** Server says this appointment is still within the 24h delete window. */
+  canDelete: boolean;
 }
 
 interface Props {
@@ -105,6 +110,7 @@ export function CalendarClient({
     isClinicalRole ? currentUserId : "",
   );
   const [creating, setCreating] = useState<{ start: string; end: string } | null>(null);
+  const [walkInOpen, setWalkInOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<AppointmentEvent | null>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
 
@@ -222,9 +228,18 @@ export function CalendarClient({
             </div>
           ) : null}
           {canBook ? (
-            <Button onClick={openCreateNow} size="sm">
-              + New appointment
-            </Button>
+            <>
+              {/* Walk-in is FO-only: clinical roles never see the intake-
+                  pending flow. */}
+              {!isClinicalRole ? (
+                <Button onClick={() => setWalkInOpen(true)} size="sm" variant="outline">
+                  Walk-in (intake pending)
+                </Button>
+              ) : null}
+              <Button onClick={openCreateNow} size="sm">
+                + New appointment
+              </Button>
+            </>
           ) : null}
         </div>
       </header>
@@ -314,6 +329,7 @@ export function CalendarClient({
               else if (status === "COMPLETED") classes.push("mbd-evt-completed");
               if (arg.event.extendedProps.hasClash) classes.push("mbd-evt-clash");
               if (arg.event.extendedProps.pendingReschedule) classes.push("mbd-evt-pending-rsch");
+              if (arg.event.extendedProps.intakePending) classes.push("mbd-evt-intake-pending");
               return classes;
             }}
             eventContent={renderEventContent}
@@ -323,6 +339,23 @@ export function CalendarClient({
       </Card>
 
       <CalendarStyles />
+
+      {/* Walk-in dialog — separate from the full booking dialog because the
+        * data shape is much smaller (no patient picker, no service). */}
+      <WalkInAppointmentDialog
+        open={walkInOpen}
+        onOpenChange={setWalkInOpen}
+        startIso={
+          creating?.start ??
+          new Date(Math.ceil(Date.now() / (30 * 60_000)) * (30 * 60_000)).toISOString()
+        }
+        endIso={
+          creating?.end ??
+          new Date(Math.ceil(Date.now() / (30 * 60_000)) * (30 * 60_000) + 30 * 60_000).toISOString()
+        }
+        therapists={therapists.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+        onCreated={() => calendarRef.current?.getApi().refetchEvents()}
+      />
 
       {creating ? (
         <CreateAppointmentDialog
@@ -371,6 +404,8 @@ function eventToView(e: EventApi): AppointmentEvent {
       (e.extendedProps.flags as ReadonlyArray<{ type: string; label: string; color: string | null }>) ?? [],
     hasClash: Boolean(e.extendedProps.hasClash),
     pendingReschedule: Boolean(e.extendedProps.pendingReschedule),
+    intakePending: Boolean(e.extendedProps.intakePending),
+    canDelete: Boolean(e.extendedProps.canDelete),
   };
 }
 
@@ -555,6 +590,13 @@ function CalendarStyles() {
       .fc .mbd-evt-pending-rsch:not(.mbd-evt-clash) {
         box-shadow: 0 0 0 2px #d97706, 0 2px 6px rgba(217,119,6,0.20);
       }
+      /* Walk-in (intake pending) — yellow ring + striped left edge so the FO
+       * can spot at a glance which appointments still need intake done on
+       * arrival. Beats clash + pending-rsch in stacking only when nothing
+       * else fires; clashes still win visually. */
+      .fc .mbd-evt-intake-pending:not(.mbd-evt-clash):not(.mbd-evt-pending-rsch) {
+        box-shadow: 0 0 0 2px #eab308, 0 2px 6px rgba(234,179,8,0.22);
+      }
       /* Inline pills inside the event body. Kept small and uppercase so
        * they read as labels, not text. */
       .mbd-evt-pill {
@@ -691,6 +733,14 @@ function CreateAppointmentDialog({
     const c = clients.find((x) => x.id === clientId);
     return c?.therapistIds.includes(therapistId) ?? false;
   }, [clientId, therapistId, clients]);
+
+  // Reset the add-to-plan confirmation whenever the patient or therapist
+  // changes. Without this the prior choice carries over visually ("Yes" stays
+  // highlighted) and can submit a stale answer for a different therapist —
+  // the bug behind "add doctor → add to care plan" reports.
+  useEffect(() => {
+    setAddAssignmentConfirmed(null);
+  }, [clientId, therapistId]);
 
   const servicesByDepartment = useMemo(() => {
     const t = therapists.find((x) => x.id === therapistId);
@@ -1036,6 +1086,16 @@ function CreateAppointmentDialog({
   );
 }
 
+// Cancellation categories — server enforces this as the required tag when
+// status flips to CANCELLED. NO_SHOW is also a top-level Appointment.status
+// value; declaring no-show goes through a separate handler that PATCHes
+// status=NO_SHOW directly (skipping the cancellation pathway).
+const CANCELLATION_CATEGORY_LABELS: Record<string, string> = {
+  PATIENT_CANCELLED: "Patient cancelled",
+  THERAPIST_CANCELLED_SHIFT: "Therapist cancelled / shift change",
+  NO_SHOW: "No-show (patient didn't arrive)",
+};
+
 function EventDetailDialog({
   event,
   canEdit,
@@ -1048,6 +1108,9 @@ function EventDetailDialog({
   const [pending, setPending] = useState(false);
   const [reason, setReason] = useState("");
   const [cancelledBy, setCancelledBy] = useState<"PATIENT" | "THERAPIST" | "CLINIC">("PATIENT");
+  const [cancelCategory, setCancelCategory] = useState<
+    "PATIENT_CANCELLED" | "THERAPIST_CANCELLED_SHIFT" | "NO_SHOW"
+  >("PATIENT_CANCELLED");
 
   async function cancel() {
     setPending(true);
@@ -1060,6 +1123,7 @@ function EventDetailDialog({
           status: "CANCELLED",
           cancelledBy,
           cancelledReason: reason || undefined,
+          cancellationCategory: cancelCategory,
         }),
       });
       if (!res.ok) {
@@ -1069,6 +1133,51 @@ function EventDetailDialog({
       onClose(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function markNoShow() {
+    setPending(true);
+    try {
+      const res = await fetch("/api/appointments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: event.id, status: "NO_SHOW" }),
+      });
+      if (!res.ok) {
+        throw new Error(await readApiError(res, { fallback: "Couldn't mark as no-show." }));
+      }
+      toast.success("Marked as no-show");
+      onClose(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No-show failed");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function deleteMistake() {
+    if (
+      !window.confirm(
+        "Delete this appointment entirely?\n\nUse only if it was booked by mistake — for genuine cancellations use the Cancel flow instead. Deletion is permanent.",
+      )
+    ) {
+      return;
+    }
+    setPending(true);
+    try {
+      const res = await fetch(`/api/appointments?id=${encodeURIComponent(event.id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error(await readApiError(res, { fallback: "Couldn't delete the appointment." }));
+      }
+      toast.success("Appointment deleted");
+      onClose(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setPending(false);
     }
@@ -1124,9 +1233,27 @@ function EventDetailDialog({
           <span className="text-muted-foreground">Status:</span> {event.status}
         </p>
       </div>
-      {canEdit && event.status !== "CANCELLED" ? (
+      {canEdit && event.status !== "CANCELLED" && event.status !== "NO_SHOW" ? (
         <div className="space-y-3 rounded-md border p-3">
           <p className="text-sm font-semibold">Cancel</p>
+          <div className="space-y-1">
+            <Label className="text-xs">Category *</Label>
+            <Select
+              value={cancelCategory}
+              onValueChange={(v) =>
+                setCancelCategory(v as "PATIENT_CANCELLED" | "THERAPIST_CANCELLED_SHIFT" | "NO_SHOW")
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(CANCELLATION_CATEGORY_LABELS).map(([k, label]) => (
+                  <SelectItem key={k} value={k}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Cancelled by</Label>
@@ -1145,21 +1272,39 @@ function EventDetailDialog({
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Reason</Label>
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional" />
+              <Label className="text-xs">Notes (optional)</Label>
+              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="extra context" />
             </div>
           </div>
         </div>
       ) : null}
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-wrap gap-2">
           <Button variant="outline" onClick={() => onClose(false)}>
             Close
           </Button>
-          {canEdit && event.status !== "CANCELLED" ? (
-            <Button variant="destructive" onClick={cancel} disabled={pending}>
-              {pending ? "Cancelling…" : "Cancel appointment"}
+          {/* Delete-by-mistake: hard-delete within the 24h window, regardless
+            * of status. Different semantics from "Cancel" — for genuine
+            * mis-clicks, not real cancellations. */}
+          {canEdit && event.canDelete ? (
+            <Button
+              variant="outline"
+              onClick={deleteMistake}
+              disabled={pending}
+              title="Booked by mistake — hard-delete the appointment"
+            >
+              Delete (mistake)
             </Button>
+          ) : null}
+          {canEdit && event.status !== "CANCELLED" && event.status !== "NO_SHOW" ? (
+            <>
+              <Button variant="outline" onClick={markNoShow} disabled={pending}>
+                {pending ? "…" : "Mark no-show"}
+              </Button>
+              <Button variant="destructive" onClick={cancel} disabled={pending}>
+                {pending ? "Cancelling…" : "Cancel appointment"}
+              </Button>
+            </>
           ) : null}
         </DialogFooter>
       </DialogContent>

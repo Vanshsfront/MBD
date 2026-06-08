@@ -25,6 +25,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
 import { SharePortalButton } from "./share-portal-button";
 import { EditDemographicsDialog } from "./edit-demographics-dialog";
+import { TherapistSessionSummary } from "./therapist-session-summary";
 
 export default async function PatientOverview({
   params,
@@ -142,6 +143,45 @@ export default async function PatientOverview({
   const lifetimeBilled = paidAggregate._sum.paidAmount ?? 0;
   const primaryAssignment = client.doctorAssignments[0] ?? null;
 
+  // Compact session counts for THERAPIST role — replaces the /packages tab
+  // entirely (they're redirected off it). FO + others see the full Packages
+  // tab as before.
+  const isTherapist = session.user.role === "THERAPIST";
+  const therapistPackages = isTherapist
+    ? await prisma.package.findMany({
+        where: { clientId: id, status: { in: ["ACTIVE", "EXPIRED", "COMPLETED"] } },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          totalSessions: true,
+          completedSessions: true,
+          validUntil: true,
+          status: true,
+          serviceMix: true,
+        },
+      })
+    : [];
+  const therapistPackageRows = therapistPackages.map((p) => {
+    // Derive a friendly name from the service mix without leaking pricing.
+    let name = "Package";
+    try {
+      const mix = JSON.parse(p.serviceMix) as Array<{ serviceName?: string }>;
+      const first = mix.find((m) => m.serviceName)?.serviceName;
+      if (first) name = mix.length > 1 ? `${first} +${mix.length - 1}` : first;
+    } catch {
+      /* keep generic name */
+    }
+    return {
+      id: p.id,
+      name,
+      totalSessions: p.totalSessions,
+      completedSessions: p.completedSessions,
+      validUntil: p.validUntil.toISOString(),
+      status: p.status,
+    };
+  });
+
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
@@ -186,6 +226,10 @@ export default async function PatientOverview({
             </div>
           </div>
         </Card>
+
+        {isTherapist ? (
+          <TherapistSessionSummary clientId={id} packages={therapistPackageRows} />
+        ) : null}
 
         <Card className="overflow-hidden p-0">
           <div className="flex items-center justify-between border-b border-[color:var(--border-light)] px-5 py-4">

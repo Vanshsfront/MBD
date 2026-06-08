@@ -96,6 +96,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // first name when creating the stub patient; we respect that.
   const updateData: Record<string, unknown> = {
     visitReasons: JSON.stringify(f.selectedCategories),
+    // Walk-in stubs land here as PENDING_INTAKE; completing the intake
+    // form (here OR on the patient-self path) flips them back to COMPLETED.
+    intakeStatus: "COMPLETED",
   };
   if (!client.firstName?.trim()) updateData.firstName = f.firstName;
   if (!client.lastName?.trim()) updateData.lastName = f.lastName;

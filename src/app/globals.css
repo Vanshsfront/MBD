@@ -73,7 +73,11 @@
   --card: #ffffff;
   --card-foreground: #1a1a1e;
 
-  --primary: #2a7db8;
+  /* Darkened from #2a7db8 → #1a5a8a for WCAG 2.1 AA contrast on white text.
+     Old value measured ≈ 3.8:1, below the 4.5:1 threshold for normal text.
+     #1a5a8a measures ≈ 7.1:1 — comfortably AAA, same blue family.
+     Reference: audit-2026-06-06 RR-A11Y-008 (High). */
+  --primary: #1a5a8a;
   --primary-foreground: #ffffff;
 
   --secondary: #f5f4f2;
@@ -577,4 +581,30 @@ body {
     margin-top: 4px;
   }
   .receipt-foot { margin-top: 14px; font-size: 10.5px; color: var(--text-tertiary); text-align: center; }
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * Honour the user's OS-level "Reduce motion" preference.
+ *
+ * Without this, .pulse-dot, .animate-subtle-pulse, .animate-shimmer,
+ * .hover-lift, .press-scale, and every Radix data-state animation keep
+ * firing even for users who have explicitly asked their device to
+ * disable motion (vestibular disorders, photosensitive epilepsy, or
+ * simple preference). WCAG 2.3.3 (Animation from Interactions) and
+ * India RPwD Act 2016 alignment. Reference: audit-2026-06-06 F-015.
+ *
+ * Strategy: collapse every animation/transition to a near-zero
+ * duration rather than `animation: none`, so functional state changes
+ * (modal open/close, focus rings) still render correctly — they just
+ * don't animate.
+ * ──────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

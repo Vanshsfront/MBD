@@ -128,6 +128,7 @@ export async function createAuditLog(params: AuditLogParams): Promise<void> {
       },
     });
   } catch (err) {
-    console.warn("[audit] failed to write audit log", err);
+    const { logger } = await import("@/lib/logger");
+    logger.warn({ err, event: "audit.write.failed" }, "audit log write failed");
   }
 }

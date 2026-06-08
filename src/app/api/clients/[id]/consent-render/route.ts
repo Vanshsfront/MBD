@@ -4,9 +4,10 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/api-auth";
+import { requirePermission, assertCentreScope } from "@/lib/api-auth";
 import { renderDocxTemplate } from "@/lib/templates/docx";
 import { CATEGORY_KEYS, SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/lib/categories";
+import { phiHeaders } from "@/lib/responses";
 
 interface AddressJson {
   line1?: string;
@@ -39,6 +40,8 @@ export async function GET(
     },
   });
   if (!client) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   // Pull the FO's signature image (PRD §6.1: consent form has FO signature
   // slot). Patient signature is captured at /consent step and stored on
@@ -105,11 +108,11 @@ export async function GET(
 
   return new NextResponse(new Uint8Array(docxBuf), {
     status: 200,
-    headers: {
-      "Content-Type":
+    headers: phiHeaders({
+      contentType:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename="consent-${client.clientCode}.docx"`,
-    },
+      filename: `consent-${client.clientCode}.docx`,
+    }),
   });
 }
 

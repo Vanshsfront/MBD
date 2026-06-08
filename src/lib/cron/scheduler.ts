@@ -2,7 +2,8 @@
 // hot-reload doesn't stack timers, and only when the runtime is Node (skipped
 // for the Edge runtime where node-cron isn't available).
 
-import { runPackageExpiryJob, runLowStockJob, runFollowUpDueJob } from "@/lib/cron/jobs";
+import { runPackageExpiryJob, runLowStockJob, runFollowUpDueJob, runIntakeTokenPurgeJob } from "@/lib/cron/jobs";
+import { logger } from "@/lib/logger";
 
 declare global {
   var __mbdCronStarted: boolean | undefined;
@@ -29,18 +30,28 @@ export async function startScheduler(): Promise<void> {
     void safeRun("low-stock", runLowStockJob);
   });
 
-  // eslint-disable-next-line no-console
-  console.info("[cron] scheduler started");
+  // Daily at 03:00: purge expired intake tokens older than 7 days.
+  // Reference: audit-2026-06-06 F-003 (Critical, retention policy).
+  cron.schedule("0 3 * * *", () => {
+    void safeRun("intake-token-purge", runIntakeTokenPurgeJob);
+  });
+
+  logger.info({ event: "cron.scheduler.started" }, "cron scheduler started");
 }
 
 async function safeRun(name: string, fn: () => Promise<unknown>): Promise<void> {
+  const start = Date.now();
   try {
     const result = await fn();
-    // eslint-disable-next-line no-console
-    console.info(`[cron] ${name} ok`, result);
+    logger.info(
+      { event: "cron.job.ok", job: name, durationMs: Date.now() - start, result },
+      `cron job ${name} ok`,
+    );
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn(`[cron] ${name} failed`, err);
+    logger.error(
+      { event: "cron.job.failed", job: name, durationMs: Date.now() - start, err },
+      `cron job ${name} failed`,
+    );
   }
 }
 
@@ -51,11 +62,13 @@ export async function runAllOnce(): Promise<{
   packageExpiry: { alerts: number };
   lowStock: { alerts: number };
   followUpDue: { notifications: number };
+  intakeTokenPurge: { purged: number };
 }> {
-  const [packageExpiry, lowStock, followUpDue] = await Promise.all([
+  const [packageExpiry, lowStock, followUpDue, intakeTokenPurge] = await Promise.all([
     runPackageExpiryJob(),
     runLowStockJob(),
     runFollowUpDueJob(14),
+    runIntakeTokenPurgeJob(),
   ]);
-  return { packageExpiry, lowStock, followUpDue };
+  return { packageExpiry, lowStock, followUpDue, intakeTokenPurge };
 }

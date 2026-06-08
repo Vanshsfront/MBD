@@ -14,7 +14,6 @@ interface State {
   dietPattern: string;
   p: { individual?: string; duo?: string; group?: string; online?: string; timePreference?: string };
   specialRequests: string;
-  consent: { truth?: string; cancellation?: string; liability?: string };
 }
 
 export function YogaIntakeForm({ formData, setFormData, disabled }: ClinicalFormProps) {
@@ -118,28 +117,6 @@ export function YogaIntakeForm({ formData, setFormData, disabled }: ClinicalForm
               disabled={disabled}
             />
           </Field>
-        </div>
-      </Section>
-
-      <Section title="Consent">
-        <div className="space-y-2">
-          {(
-            [
-              { key: "truth", label: "Information above is accurate." },
-              { key: "cancellation", label: "Accept the cancellation policy." },
-              { key: "liability", label: "Release MBD from yoga-practice liability." },
-            ] as const
-          ).map((it) => (
-            <label key={it.key} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={data.consent?.[it.key] === "☑"}
-                onChange={(e) => setBox("consent", it.key, e.target.checked)}
-                disabled={disabled}
-              />
-              {it.label}
-            </label>
-          ))}
         </div>
       </Section>
     </div>

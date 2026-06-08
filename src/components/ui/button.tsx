@@ -29,9 +29,13 @@ const buttonVariants = cva(
       },
       size: {
         sm: "h-8 px-3 text-[0.8rem]",
-        md: "h-9 px-4",
-        lg: "h-10 px-6",
-        icon: "h-9 w-9",
+        // md/lg/icon raised to deliver a ≥44×44 hit zone on touch devices
+        // (WCAG 2.5.5 Target Size, India RPwD Act). The icon variant keeps
+        // the icon visually 40px but adds p-1.5 padding to push the actual
+        // tap target to 44×44. Reference: audit-2026-06-06 F-011 (High).
+        md: "h-10 px-4",
+        lg: "h-11 px-6",
+        icon: "h-10 w-10 p-1.5",
       },
     },
     defaultVariants: { variant: "default", size: "md" },

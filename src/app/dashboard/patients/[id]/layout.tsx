@@ -28,14 +28,22 @@ export default async function PatientLayout({
       status: true,
       age: true,
       sex: true,
-      // Both assignments AND appointments scoped to me — a clinical user may
-      // legitimately reach this page via either a (current/past) assignment
-      // OR a (past/future) appointment. Only the truly-unrelated are blocked.
+      // Assignments + appointments + consultations all scoped to me — a
+      // clinical user may legitimately reach this page via any of: a
+      // (current/past) assignment, a (past/future) appointment, OR a
+      // documented consultation. Only the truly-unrelated are blocked.
       // The clinical sub-page still renders reassigned-away as view-only.
       doctorAssignments: { select: { staffId: true } },
       appointments: {
         where: isClinicalRole(session.user.role)
           ? { therapistId: session.user.id }
+          : undefined,
+        select: { id: true },
+        take: 1,
+      },
+      consultations: {
+        where: isClinicalRole(session.user.role)
+          ? { consultantId: session.user.id }
           : undefined,
         select: { id: true },
         take: 1,
@@ -51,7 +59,8 @@ export default async function PatientLayout({
   if (isClinicalRole(session.user.role)) {
     const everAssigned = client.doctorAssignments.some((a) => a.staffId === session.user.id);
     const everBooked = client.appointments.length > 0;
-    if (!everAssigned && !everBooked) {
+    const everConsulted = client.consultations.length > 0;
+    if (!everAssigned && !everBooked && !everConsulted) {
       return (
         <div className="py-10">
           <AccessBlocked />
@@ -60,12 +69,20 @@ export default async function PatientLayout({
     }
   }
 
-  const tabs = [
+  // FO never sees clinical records (no access to consultation notes / PDFs).
+  // Therapist never sees Packages (per role-split — see therapist-session-
+  // summary on the overview page instead).
+  const role = session.user.role;
+  const tabs: { href: string; label: string }[] = [
     { href: `/dashboard/patients/${id}`, label: "Overview" },
-    { href: `/dashboard/patients/${id}/clinical`, label: "Clinical record" },
-    { href: `/dashboard/patients/${id}/packages`, label: "Packages" },
-    { href: `/dashboard/patients/${id}/invoices`, label: "Invoices" },
   ];
+  if (role !== "FRONT_OFFICE") {
+    tabs.push({ href: `/dashboard/patients/${id}/clinical`, label: "Clinical record" });
+  }
+  if (role !== "THERAPIST") {
+    tabs.push({ href: `/dashboard/patients/${id}/packages`, label: "Packages" });
+  }
+  tabs.push({ href: `/dashboard/patients/${id}/invoices`, label: "Invoices" });
 
   const initials = `${client.firstName?.[0] ?? ""}${client.lastName?.[0] ?? ""}`.toUpperCase() || "?";
   const ageSex = [client.age, client.sex].filter(Boolean).join(" · ");

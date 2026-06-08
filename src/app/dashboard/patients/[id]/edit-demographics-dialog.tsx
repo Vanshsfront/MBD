@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PhoneField } from "@/components/ui/phone-field";
+import { DateField } from "@/components/ui/date-field";
 import { readApiError } from "@/lib/error-messages";
 
 interface InitialClient {
@@ -166,11 +167,11 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
               />
             </Field>
             <Field id="dob" label="Date of birth">
-              <Input
+              <DateField
                 id="dob"
-                type="date"
                 value={dob.slice(0, 10)}
-                onChange={(e) => setDob(e.target.value)}
+                onChange={(v) => setDob(v)}
+                max={new Date().toISOString().slice(0, 10)}
               />
             </Field>
             <Field id="age" label="Age">

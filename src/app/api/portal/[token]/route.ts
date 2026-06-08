@@ -3,11 +3,18 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { enforce, clientIp } from "@/lib/rate-limit";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  // Public endpoint — 30/min/IP. Enough for the patient's normal portal
+  // browsing; blocks token brute-force at scale.
+  // Reference: audit-2026-06-06.md F-005, API-001.
+  const rl = enforce(`portal:${clientIp(req)}`, 30, 60 * 1000);
+  if (rl) return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
+
   const { token } = await params;
   if (!token || token.length < 16) {
     return NextResponse.json({ error: "invalid_token" }, { status: 400 });

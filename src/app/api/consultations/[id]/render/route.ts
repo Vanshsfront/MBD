@@ -4,13 +4,14 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/api-auth";
+import { requireAuth, assertCentreScope } from "@/lib/api-auth";
 import { hasPermission, isClinicalRole } from "@/lib/permissions";
 import { renderDocxTemplate } from "@/lib/templates/docx";
 import {
   DOCX_TEMPLATES,
   type DocxTemplateKey,
 } from "@/lib/templates/keys";
+import { phiHeaders } from "@/lib/responses";
 
 export async function GET(
   _req: Request,
@@ -31,7 +32,9 @@ export async function GET(
   });
   if (!consultation) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  // Clinical roles only see their own. FO/Owner/Admin/DEV: anyone.
+  // Clinical roles only see their own. FO/Owner/Admin/DEV: anyone within the
+  // active centre. The centre-scope check below closes F-016 — without it, any
+  // non-clinical role at Centre A could render Centre B's consultation PDFs.
   if (
     isClinicalRole(auth.user.role) &&
     consultation.consultantId !== auth.user.id
@@ -41,6 +44,8 @@ export async function GET(
   if (!hasPermission(auth.user.role, "patients:view_assigned")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  const scope = await assertCentreScope(auth.user, consultation.client);
+  if (scope) return scope;
 
   const templateKey = consultation.templateKey as DocxTemplateKey;
   if (!(templateKey in DOCX_TEMPLATES)) {
@@ -103,11 +108,11 @@ export async function GET(
 
   return new NextResponse(new Uint8Array(docxBuf), {
     status: 200,
-    headers: {
-      "Content-Type":
+    headers: phiHeaders({
+      contentType:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename="consultation-${consultation.client.clientCode}-${consultation.id.slice(-6)}.docx"`,
-    },
+      filename: `consultation-${consultation.client.clientCode}-${consultation.id.slice(-6)}.docx`,
+    }),
   });
 }
 

@@ -15,13 +15,9 @@ import {
   type RecommendationItem,
   RecommendationPicker,
   Section,
+  SessionProtocolField,
   type ServiceOption,
 } from "./shared";
-import {
-  InventoryUsageWidget,
-  type InventoryItemOption,
-  type InventoryUsageItem,
-} from "./inventory-usage-widget";
 import { SectionRail } from "./section-rail";
 
 import { PhysicianConsultationForm } from "./physician-consultation";
@@ -61,7 +57,6 @@ interface Props {
   viewOnly: boolean;
   consultations: ConsultationView[];
   services: ServiceOption[];
-  inventory: InventoryItemOption[];
 }
 
 const TEMPLATE_LABELS: Record<DocxTemplateKey, string> = {
@@ -90,7 +85,6 @@ export function ClinicalShell({
   viewOnly,
   consultations,
   services,
-  inventory,
 }: Props) {
   // Find this user's existing draft for this template (if any). DRAFT only —
   // COMPLETED rows are immutable except for OWNER, who can re-edit; we still
@@ -152,10 +146,10 @@ export function ClinicalShell({
   const [planOfCare, setPlanOfCare] = useState<string>(ownDraft ? "" : "");
   const [followUp, setFollowUp] = useState<string>("");
   const [recommended, setRecommended] = useState<RecommendationItem[]>(initialRecommended);
-  // Inventory consumed during this session (PRD §4 C5). Flushed to
-  // /api/inventory-usage AFTER the consultation save returns success so we
-  // have a consultationId to bind the InventoryLog rows to.
-  const [inventoryUsage, setInventoryUsage] = useState<InventoryUsageItem[]>([]);
+  // Inventory-consumed widget was removed (2026-05-30) — doctor-use inventory
+  // is stocked separately from sale stock, so pulling from sale stock on
+  // session-save was wrong. Logged usage remains in InventoryLog from prior
+  // sessions; no further writes happen from this surface.
 
   const isLocked = draftStatus === "COMPLETED" && !canEditCompleted;
   const disabled = isLocked || viewOnly;
@@ -166,8 +160,8 @@ export function ClinicalShell({
   // manual and auto — through one promise chain so they never overlap, and
   // (b) mirror activeId in a ref so a persist queued behind the first one sees
   // the id that the create returned (otherwise it would POST a duplicate row).
-  // Autosave never flushes inventory (that decrements stock) and never marks
-  // a record COMPLETED — those stay deliberate manual actions.
+  // Autosave never marks a record COMPLETED — that stays a deliberate
+  // manual action.
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved" | "error">("idle");
   const activeIdRef = useRef<string | null>(activeId);
@@ -184,11 +178,9 @@ export function ClinicalShell({
 
   async function runPersist({
     status,
-    flushInventory,
     manual,
   }: {
     status: "DRAFT" | "COMPLETED";
-    flushInventory: boolean;
     manual: boolean;
   }) {
     if (viewOnly) return;
@@ -241,41 +233,6 @@ export function ClinicalShell({
       setActiveId(out.consultationId);
       setDraftStatus(status);
 
-      // Flush queued inventory usage AFTER the consultation save lands so we
-      // can bind InventoryLog rows to the consultationId — but only on an
-      // explicit save, never on autosave (it decrements stock). We swallow
-      // partial failures with a toast; the consultation itself is persisted.
-      if (flushInventory && inventoryUsage.length > 0) {
-        try {
-          const ir = await fetch("/api/inventory-usage", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              consultationId: out.consultationId,
-              items: inventoryUsage.map((u) => ({
-                inventoryItemId: u.inventoryItemId,
-                qty: u.qty,
-                notes: u.notes,
-              })),
-            }),
-          });
-          if (!ir.ok) {
-            toast.error(
-              await readApiError(ir, { fallback: "Couldn't log inventory usage." }),
-            );
-          } else {
-            toast.success(
-              `Logged ${inventoryUsage.length} inventory line${inventoryUsage.length === 1 ? "" : "s"}`,
-            );
-            setInventoryUsage([]);
-          }
-        } catch (err) {
-          toast.error(
-            err instanceof Error ? `Inventory log failed: ${err.message}` : "Inventory log failed",
-          );
-        }
-      }
-
       if (manual) {
         toast.success(
           status === "COMPLETED" ? "Consultation completed and locked" : "Draft saved",
@@ -327,7 +284,7 @@ export function ClinicalShell({
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     }
-    void enqueue(() => runPersist({ status, flushInventory: true, manual: true }));
+    void enqueue(() => runPersist({ status, manual: true }));
   }
 
   // Point the autosave callback at the latest state on every render (no deps),
@@ -348,7 +305,7 @@ export function ClinicalShell({
           (v) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0),
         );
       if (!hasContent) return;
-      void enqueue(() => runPersist({ status: "DRAFT", flushInventory: false, manual: false }));
+      void enqueue(() => runPersist({ status: "DRAFT", manual: false }));
     };
   });
 
@@ -459,21 +416,15 @@ export function ClinicalShell({
             disabled={disabled}
           />
 
-          {/* Inventory consumed in session — PRD §4 C5. Decrements stock +
-              writes InventoryLog on manual save (never on autosave). */}
-          {inventory.length > 0 ? (
-            <Section
-              title="Inventory used in session"
-              description="Tape, supplements, etc. Decrements stock on save."
-            >
-              <InventoryUsageWidget
-                options={inventory}
-                value={inventoryUsage}
-                onChange={setInventoryUsage}
-                disabled={disabled}
-              />
-            </Section>
-          ) : null}
+          {/* Session protocol — every clinical template gets this textarea
+              so the therapist can record what was actually done in this
+              session (exercises, modalities, progressions). Lives in
+              formData.sessionProtocol; no separate schema column. */}
+          <SessionProtocolField
+            value={(formData.sessionProtocol as string | undefined) ?? ""}
+            onChange={(v) => setFormData({ ...formData, sessionProtocol: v })}
+            disabled={disabled}
+          />
 
           {/* Therapist recommendation — FO converts to a Package downstream. */}
           <Section
