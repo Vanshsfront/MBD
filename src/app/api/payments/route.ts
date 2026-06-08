@@ -6,21 +6,46 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requestMeta } from "@/lib/api-auth";
+import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 import { activeCentreId } from "@/lib/centre";
 
-const createSchema = z.object({
-  invoiceId: z.string().min(1),
-  amount: z.number().positive(),
-  method: z.enum(["CASH", "CARD", "CHEQUE", "NEFT", "UPI", "RAZORPAY", "OTHER"]),
-  reference: z.string().max(120).optional(),
-  paymentDateIso: z.string().datetime().optional(),
-});
+// `.strict()` so callers cannot smuggle invoiceId, recordedById,
+// idempotencyKey, or paidAmount in via the body. Reference: AUTHZ-007.
+const createSchema = z
+  .object({
+    invoiceId: z.string().min(1),
+    amount: z.number().positive(),
+    method: z.enum(["CASH", "CARD", "CHEQUE", "NEFT", "UPI", "RAZORPAY", "OTHER"]),
+    reference: z.string().max(120).optional(),
+    paymentDateIso: z.string().datetime().optional(),
+  })
+  .strict();
 
 export async function POST(req: Request) {
   const auth = await requirePermission("billing:record_payment");
   if (!auth.ok) return auth.response;
+
+  // Idempotency: when the FO's browser retries on a flaky connection, a second
+  // identical POST with the same Idempotency-Key header returns the original
+  // response instead of double-recording. Reference: audit-2026-06-06.md F-008.
+  const idempotencyKey = req.headers.get("idempotency-key")?.trim() || null;
+  if (idempotencyKey) {
+    const existing = await prisma.payment.findUnique({
+      where: { idempotencyKey },
+      include: { invoice: { select: { invoiceNumber: true, totalAmount: true, paidAmount: true, status: true } } },
+    });
+    if (existing) {
+      return NextResponse.json({
+        ok: true,
+        paymentId: existing.id,
+        paidAmount: existing.invoice.paidAmount,
+        remaining: Math.max(0, existing.invoice.totalAmount - existing.invoice.paidAmount),
+        status: existing.invoice.status,
+        replayed: true,
+      });
+    }
+  }
 
   const body = (await req.json()) as unknown;
   const parsed = createSchema.safeParse(body);
@@ -37,6 +62,8 @@ export async function POST(req: Request) {
     include: { misEntries: true },
   });
   if (!invoice) return NextResponse.json({ error: "invoice_not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, invoice);
+  if (scope) return scope;
   if (invoice.status === "CANCELLED")
     return NextResponse.json({ error: "invoice_cancelled" }, { status: 400 });
 
@@ -79,6 +106,7 @@ export async function POST(req: Request) {
         reference: f.reference ?? null,
         recordedById: auth.user.id,
         paymentDate: paidAt,
+        idempotencyKey: idempotencyKey,
       },
     });
 

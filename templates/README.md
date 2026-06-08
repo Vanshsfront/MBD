@@ -54,6 +54,31 @@ For each clinical template the placeholders to insert are documented inline in:
 - Line items: rows 28–53 (max 26 rows). Columns vary by flavor (see `src/lib/templates/xlsx.ts`).
 - Totals: rows 54–58. Pre-existing template formulas (SUM, SUMPRODUCT, VLOOKUP) are preserved by the renderer.
 
+## Trust boundary (security)
+
+**Every file in this directory is trusted, repo-shipped, and reviewed at PR time.**
+The renderer (`src/lib/templates/docx.ts`) calls `docxtemplater` + `pizzip` +
+`docxtemplater-image-module-free`, the last of which has a transitive dep on
+`xmldom` with 8 published advisories (1 Critical). The risk is theoretical
+*only because* no user-supplied DOCX is ever passed through this pipeline:
+
+- `/api/consultations/[id]/attachments` stores uploaded files in object
+  storage **without parsing them**.
+- The renderer reads only from this directory.
+
+If a future feature ever opens user-uploaded DOCX files through
+`docxtemplater` (e.g. "import a patient record"), this trust boundary
+breaks and the xmldom CVEs become live. Surface that risk in the PR.
+
+**Rules for editing this directory:**
+1. Only add `.docx` / `.xlsx` files authored by MBD or sourced from
+   trusted suppliers and reviewed line by line.
+2. Never `git add` a template file directly from a patient email.
+3. Any addition must be accompanied by a `TemplateKey` registration in
+   `src/lib/templates/keys.ts` so the renderer rejects anything else.
+
+Reference: `review/audit-2026-06-06.md` F-014.
+
 ## Caveats
 
 - **Merged cells** in the DOCX clinical exam tables: docxtemplater loops must not span merge boundaries. Place loop tags around whole table rows.

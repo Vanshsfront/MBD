@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requestMeta } from "@/lib/api-auth";
+import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 import { allocateInvoiceNumber } from "@/lib/invoice-numbering";
 import { computeInvoiceTotals } from "@/lib/discount";
@@ -51,6 +51,8 @@ export async function POST(req: Request) {
   if (!client) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
   if (!client.centre)
     return NextResponse.json({ error: "client_has_no_centre" }, { status: 400 });
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   // Resolve the actual consultant from the originating Consultation (if provided).
   // Falls back to the package creator (FO) so the MIS row never carries a department

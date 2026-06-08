@@ -182,6 +182,11 @@ model Staff {
   color            String? // hex (#RRGGBB) calendar colour; null falls back to a deterministic palette colour derived from id
   signatureDataUrl String? // PNG base64 — used to auto-stamp signature on PDFs
 
+  // Bumped on logout / "sign out everywhere" / role change. JWTs carry the
+  // version they were minted at; api-auth rejects a JWT whose `sv` claim is
+  // lower than the current row's value. Reference: audit-2026-06-06 F-012.
+  sessionVersion Int @default(0)
+
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
 
@@ -536,6 +541,12 @@ model Invoice {
   payments   Payment[]
   misEntries MisEntry[]
 
+  // Client-supplied idempotency token (via "Idempotency-Key" header on POST).
+  // When present, a retried POST with the same key returns the original row
+  // instead of creating a duplicate. Optional — legacy callers without the
+  // header are unaffected. Reference: audit-2026-06-06.md F-008.
+  idempotencyKey String? @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -552,6 +563,11 @@ model Payment {
   invoice   Invoice @relation(fields: [invoiceId], references: [id])
 
   recordedById String?
+
+  // Idempotency token — see Invoice.idempotencyKey comment.
+  // Reference: audit-2026-06-06.md F-008.
+  idempotencyKey String? @unique
+
   createdAt    DateTime @default(now())
 }
 
@@ -731,6 +747,28 @@ model ClientFlag {
 
   createdById String?
   createdAt   DateTime @default(now())
+}
+
+// ─── RUM EVENT (real-user Core Web Vitals) ───────────
+// Browser ships metric samples to /api/rum via the web-vitals library
+// (Google, Apache-2.0). One row per metric per page navigation. Build a
+// dashboard later (Grafana, or simple admin page); for now even raw
+// numbers in a table beat the current "no measurement" status.
+// Retention: 90 days via nightly cron (TBD; for now manual cleanup).
+// Reference: audit-2026-06-06 BUNDLE-005 / F-009.
+model RumEvent {
+  id             String   @id @default(cuid())
+  metric         String   // LCP | CLS | INP | FCP | TTFB
+  value          Float    // metric value in the unit the spec defines (ms or unitless for CLS)
+  rating         String?  // good | needs-improvement | poor (from the lib's threshold)
+  page           String   // URL path only (no query/fragment)
+  navigationType String?  // navigate | reload | back-forward | prerender
+  userAgentHash  String?  // hashed; never raw UA (PII minimisation)
+  sessionIdHash  String?  // hashed per-tab session id (volatile)
+  createdAt      DateTime @default(now())
+
+  @@index([metric, createdAt])
+  @@index([page, createdAt])
 }
 
 // ─── AUDIT LOG ───────────────────────────────────────

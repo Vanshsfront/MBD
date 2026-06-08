@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/prisma";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const ONE_WEEK_MS = 7 * ONE_DAY_MS;
 
 /**
  * Package-expiry: warn for packages whose validUntil is within
@@ -159,4 +160,25 @@ export async function runFollowUpDueJob(
     }
   }
   return { notifications: created };
+}
+
+/**
+ * Intake-token purge: delete EXPIRED or COMPLETED tokens older than 7 days.
+ *
+ * Why 7 days: gives FO time to inspect/triage in the unlikely case of a
+ * tokenized intake going sideways. After that, the token row carries
+ * stale form-data JSON that we no longer need — and DPDPA §8(7) ("data
+ * not retained beyond what's necessary") starts applying to it.
+ *
+ * Reference: audit-2026-06-06 F-003 (Critical), DATA-003.
+ */
+export async function runIntakeTokenPurgeJob(): Promise<{ purged: number }> {
+  const cutoff = new Date(Date.now() - ONE_WEEK_MS);
+  const result = await prisma.intakeToken.deleteMany({
+    where: {
+      status: { in: ["EXPIRED", "COMPLETED"] },
+      createdAt: { lt: cutoff },
+    },
+  });
+  return { purged: result.count };
 }

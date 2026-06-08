@@ -4,9 +4,10 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/api-auth";
+import { requirePermission, assertCentreScope } from "@/lib/api-auth";
 import { renderInvoice, type InvoiceLineCommon } from "@/lib/templates/xlsx";
 import type { InvoiceFlavor } from "@/lib/templates/keys";
+import { phiHeaders } from "@/lib/responses";
 
 interface LineItem {
   service?: string;
@@ -37,6 +38,8 @@ export async function GET(
     },
   });
   if (!invoice) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, invoice);
+  if (scope) return scope;
 
   const flavor = invoice.invoiceFlavor.toLowerCase() as InvoiceFlavor;
   const lines = parseLineItems(invoice.lineItems);
@@ -68,11 +71,11 @@ export async function GET(
 
   return new NextResponse(new Uint8Array(buf), {
     status: 200,
-    headers: {
-      "Content-Type":
+    headers: phiHeaders({
+      contentType:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="invoice-${invoice.invoiceNumber.replace(/\//g, "-")}.xlsx"`,
-    },
+      filename: `invoice-${invoice.invoiceNumber.replace(/\//g, "-")}.xlsx`,
+    }),
   });
 }
 

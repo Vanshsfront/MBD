@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requireAuth, requestMeta } from "@/lib/api-auth";
+import { requirePermission, requireAuth, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog, computeChanges } from "@/lib/audit";
 import { isClinicalRole } from "@/lib/permissions";
 import { validateAppointmentTiming, ADJACENCY_WINDOW_MINUTES } from "@/lib/appointments";
@@ -158,6 +158,8 @@ export async function POST(req: Request) {
 
   const client = await prisma.client.findUnique({ where: { id: f.clientId } });
   if (!client) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   const warning = await patientAdjacencyWarning(f.clientId, start, end);
 
@@ -342,6 +344,8 @@ export async function PATCH(req: Request) {
 
   const existing = await prisma.appointment.findUnique({ where: { id: f.id } });
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const patchScope = await assertCentreScope(auth.user, existing);
+  if (patchScope) return patchScope;
 
   // Cancellation must be tagged — required so we can report on why slots
   // were lost (patient no-show vs therapist shift vs patient cancellation).
@@ -447,9 +451,11 @@ export async function DELETE(req: Request) {
 
   const existing = await prisma.appointment.findUnique({
     where: { id },
-    select: { id: true, createdAt: true, clientId: true, therapistId: true, startTime: true },
+    select: { id: true, createdAt: true, clientId: true, therapistId: true, startTime: true, centreId: true },
   });
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const deleteScope = await assertCentreScope(auth.user, existing);
+  if (deleteScope) return deleteScope;
 
   if (Date.now() - existing.createdAt.getTime() > DELETE_WINDOW_MS) {
     return NextResponse.json(

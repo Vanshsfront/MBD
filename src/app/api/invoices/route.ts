@@ -6,42 +6,70 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requestMeta } from "@/lib/api-auth";
+import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 import { allocateInvoiceNumber } from "@/lib/invoice-numbering";
 import { computeInvoiceTotals, type DiscountType } from "@/lib/discount";
 import { activeCentreId } from "@/lib/centre";
 
-const lineSchema = z.object({
-  service: z.string().optional(),
-  product: z.string().optional(),
-  serviceId: z.string().optional(),
-  productId: z.string().optional(),
-  consultantId: z.string().optional(),
-  consultantName: z.string().optional(),
-  hsnSac: z.string().optional(),
-  notes: z.string().optional(),
-  qty: z.number().int().min(1),
-  perAmount: z.number().min(0),
-  lineDiscount: z.number().min(0).max(1).optional(),
-  gstRate: z.number().min(0).max(1).default(0),
-});
+// `.strict()` rejects unknown body keys so a client can't smuggle
+// server-derived fields (centreId, invoiceNumber, idempotencyKey,
+// status, paidAmount) into the create payload. Reference: audit-2026-06-06
+// AUTHZ-007 (defensive hardening).
+const lineSchema = z
+  .object({
+    service: z.string().optional(),
+    product: z.string().optional(),
+    serviceId: z.string().optional(),
+    productId: z.string().optional(),
+    consultantId: z.string().optional(),
+    consultantName: z.string().optional(),
+    hsnSac: z.string().optional(),
+    notes: z.string().optional(),
+    qty: z.number().int().min(1),
+    perAmount: z.number().min(0),
+    lineDiscount: z.number().min(0).max(1).optional(),
+    gstRate: z.number().min(0).max(1).default(0),
+  })
+  .strict();
 
-const createSchema = z.object({
-  clientId: z.string().min(1),
-  invoiceFlavor: z.enum(["SERVICES", "PRODUCTS", "MANUAL"]).default("SERVICES"),
-  invoiceType: z.enum(["INVOICE", "PROFORMA"]).default("INVOICE"),
-  validTill: z.string().datetime().optional(),
-  referredBy: z.string().max(120).optional(),
-  lineItems: z.array(lineSchema).min(1),
-  discountPercent: z.number().min(0).max(100).default(0),
-  discountType: z.enum(["PERCENT", "FLAT"]).default("PERCENT"),
-  promotionCode: z.string().optional(),
-});
+const createSchema = z
+  .object({
+    clientId: z.string().min(1),
+    invoiceFlavor: z.enum(["SERVICES", "PRODUCTS", "MANUAL"]).default("SERVICES"),
+    invoiceType: z.enum(["INVOICE", "PROFORMA"]).default("INVOICE"),
+    validTill: z.string().datetime().optional(),
+    referredBy: z.string().max(120).optional(),
+    lineItems: z.array(lineSchema).min(1),
+    discountPercent: z.number().min(0).max(100).default(0),
+    discountType: z.enum(["PERCENT", "FLAT"]).default("PERCENT"),
+    promotionCode: z.string().optional(),
+  })
+  .strict();
 
 export async function POST(req: Request) {
   const auth = await requirePermission("billing:create_edit_invoice");
   if (!auth.ok) return auth.response;
+
+  // Idempotency: a retried POST with the same Idempotency-Key header returns
+  // the original invoice instead of double-creating. Reference: F-008.
+  const idempotencyKey = req.headers.get("idempotency-key")?.trim() || null;
+  if (idempotencyKey) {
+    const existing = await prisma.invoice.findUnique({
+      where: { idempotencyKey },
+      select: { id: true, invoiceNumber: true, totalAmount: true, status: true },
+    });
+    if (existing) {
+      return NextResponse.json({
+        ok: true,
+        invoiceId: existing.id,
+        invoiceNumber: existing.invoiceNumber,
+        totalAmount: existing.totalAmount,
+        status: existing.status,
+        replayed: true,
+      });
+    }
+  }
 
   const body = (await req.json()) as unknown;
   const parsed = createSchema.safeParse(body);
@@ -60,6 +88,8 @@ export async function POST(req: Request) {
   if (!client?.centre) {
     return NextResponse.json({ error: "client_or_centre_missing" }, { status: 400 });
   }
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   // Resolve consultant per line: if the form passed a consultantId, look up
   // the staff name; otherwise fall back to the FO who's creating the invoice.
@@ -212,6 +242,7 @@ export async function POST(req: Request) {
         ),
         clientId: f.clientId,
         centreId: client.centre!.id,
+        idempotencyKey: idempotencyKey,
       },
     });
 

@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requestMeta } from "@/lib/api-auth";
+import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 
 const addressSchema = z
@@ -58,6 +58,8 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: "client_not_found" }, { status: 404 });
   }
+  const scope = await assertCentreScope(auth.user, existing);
+  if (scope) return scope;
 
   const body = (await req.json()) as unknown;
   const parsed = patchSchema.safeParse(body);

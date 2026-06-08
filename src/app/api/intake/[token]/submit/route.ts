@@ -8,6 +8,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { CATEGORY_KEYS } from "@/lib/categories";
+import { enforce, clientIp } from "@/lib/rate-limit";
 
 // Required-field policy:
 //   - Mandatory per chat (3 Apr / 6 Apr): firstName, lastName, phone, email,
@@ -74,6 +75,13 @@ const intakeSchema = z.object({
 );
 
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
+  // Public endpoint — rate-limit before DB lookups so token-existence timing
+  // can't be probed at scale. 10 attempts/min/IP is generous for a single
+  // patient filling out the form; abusive at the kind of volume needed for
+  // brute-forcing CUIDs. Reference: audit-2026-06-06.md F-005, API-001.
+  const rl = enforce(`intake-submit:${clientIp(req)}`, 10, 60 * 1000);
+  if (rl) return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
+
   const { token } = await params;
   const tokenRow = await prisma.intakeToken.findUnique({
     where: { token },
@@ -218,7 +226,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json({ ok: true, clientId: result.client.id });
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
+  // Public endpoint — limit token-validity probes to 30/min/IP. Higher than
+  // POST since legitimate UIs poll this on form open.
+  const rl = enforce(`intake-get:${clientIp(req)}`, 30, 60 * 1000);
+  if (rl) return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
+
   const { token } = await params;
   const tokenRow = await prisma.intakeToken.findUnique({
     where: { token },

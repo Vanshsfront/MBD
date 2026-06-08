@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { Rum } from "@/components/rum";
 import "./globals.css";
 
 // Inter is the canonical typeface for the MBD app — chosen to match the
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body className="min-h-full">
         {children}
         <Toaster position="top-right" richColors closeButton />
+        <Rum />
       </body>
     </html>
   );

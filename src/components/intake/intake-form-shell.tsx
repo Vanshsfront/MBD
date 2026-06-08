@@ -10,7 +10,7 @@
 // field policy mirrors src/app/api/intake/[token]/submit/route.ts so server
 // validation never disagrees with the UI.
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -279,6 +279,7 @@ export function IntakeFormShell({
       setShowAllErrors(true);
       if (Object.values(errsP1).some(Boolean)) {
         setPage(1);
+        if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "instant" });
         toast.error("Some details on page 1 need attention.");
       } else {
         toast.error("Please complete all required fields.");
@@ -319,7 +320,10 @@ export function IntakeFormShell({
           type="button"
           variant="outline"
           disabled={page === 1}
-          onClick={() => setPage(1)}
+          onClick={() => {
+            setPage(1);
+            if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "instant" });
+          }}
         >
           ← Back
         </Button>
@@ -668,10 +672,24 @@ function Field({
   error?: string;
   children: React.ReactNode;
 }) {
+  // Labels ending in "*" indicate a required field. Mirror that onto the
+  // first input/select inside via aria-required so screen readers announce
+  // "required" instead of relying on the visual asterisk alone.
+  // Reference: audit-2026-06-06 RR-UX-003 (Medium).
+  const isRequired = /\*\s*$/.test(label);
+  const decoratedChildren = isRequired
+    ? React.Children.map(children, (child) =>
+        React.isValidElement(child)
+          ? React.cloneElement(child as React.ReactElement<{ "aria-required"?: boolean }>, {
+              "aria-required": true,
+            })
+          : child,
+      )
+    : children;
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      {children}
+      {decoratedChildren}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );
