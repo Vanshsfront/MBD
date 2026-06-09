@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/api-auth";
+import { requirePermission, assertCentreScope } from "@/lib/api-auth";
 
 interface RecentSource {
   date: Date;
@@ -30,6 +30,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const auth = await requirePermission("billing:create_edit_invoice");
   if (!auth.ok) return auth.response;
   const { id } = await params;
+
+  // AUTHZ-IDOR-001: gate cross-centre access. The downstream queries scope by
+  // clientId only and would otherwise leak service history across centres.
+  const client = await prisma.client.findUnique({
+    where: { id },
+    select: { centreId: true },
+  });
+  if (!client) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   const [invoices, consultations] = await Promise.all([
     prisma.invoice.findMany({

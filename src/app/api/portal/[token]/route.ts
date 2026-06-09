@@ -12,7 +12,7 @@ export async function GET(
   // Public endpoint — 30/min/IP. Enough for the patient's normal portal
   // browsing; blocks token brute-force at scale.
   // Reference: audit-2026-06-06.md F-005, API-001.
-  const rl = enforce(`portal:${clientIp(req)}`, 30, 60 * 1000);
+  const rl = await enforce(`portal:${clientIp(req)}`, 30, 60 * 1000);
   if (rl) return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
 
   const { token } = await params;

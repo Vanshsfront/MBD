@@ -6,21 +6,26 @@
 // reflects who actually saw the patient. Capped at 3 results.
 
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type Role } from "@/lib/permissions";
+import { requirePermission, assertCentreScope } from "@/lib/api-auth";
 
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const role = session.user.role as Role;
-  if (!hasPermission(role, "appointments:view_calendar_all")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requirePermission("appointments:view_calendar_all");
+  if (!auth.ok) return auth.response;
   const { id } = await context.params;
+
+  // AUTHZ-IDOR-001: gate cross-centre access. Without this, a Centre-A FO
+  // can rank therapists for any Centre-B patient by guessing the clientId.
+  const client = await prisma.client.findUnique({
+    where: { id },
+    select: { centreId: true },
+  });
+  if (!client) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   const grouped = await prisma.appointment.groupBy({
     by: ["therapistId"],

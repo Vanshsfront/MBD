@@ -6,8 +6,9 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requestMeta } from "@/lib/api-auth";
+import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
+import { generateSecureToken } from "@/lib/tokens";
 
 const TOKEN_TTL_DAYS = 30;
 
@@ -21,6 +22,9 @@ export async function POST(
 
   const client = await prisma.client.findUnique({ where: { id } });
   if (!client) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
+  // AUTHZ-IDOR-001: gate cross-centre access to portal-token issuance.
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 3600_000);
 
@@ -30,9 +34,10 @@ export async function POST(
       where: { clientId: id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-    // Issue a fresh one.
+    // Issue a fresh one. CRYPT-008: explicit CSPRNG overrides CUID default.
     return tx.clientPortalToken.create({
       data: {
+        token: generateSecureToken(),
         clientId: id,
         expiresAt,
         issuedById: auth.user.id,

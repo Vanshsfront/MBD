@@ -79,7 +79,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   // can't be probed at scale. 10 attempts/min/IP is generous for a single
   // patient filling out the form; abusive at the kind of volume needed for
   // brute-forcing CUIDs. Reference: audit-2026-06-06.md F-005, API-001.
-  const rl = enforce(`intake-submit:${clientIp(req)}`, 10, 60 * 1000);
+  const rl = await enforce(`intake-submit:${clientIp(req)}`, 10, 60 * 1000);
   if (rl) return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
 
   const { token } = await params;
@@ -229,7 +229,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   // Public endpoint — limit token-validity probes to 30/min/IP. Higher than
   // POST since legitimate UIs poll this on form open.
-  const rl = enforce(`intake-get:${clientIp(req)}`, 30, 60 * 1000);
+  const rl = await enforce(`intake-get:${clientIp(req)}`, 30, 60 * 1000);
   if (rl) return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
 
   const { token } = await params;

@@ -82,8 +82,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         // Applied BEFORE bcrypt to also blunt timing-based username enumeration.
         // Reference: audit-2026-06-06.md F-005 / AUTH-010 (High, live-confirmed).
         const ip = request instanceof Request ? clientIp(request) : "unknown";
-        const emailGate = consume(`auth:email:${normalizedEmail}`, 5, 60 * 1000);
-        const ipGate = consume(`auth:ip:${ip}`, 30, 60 * 1000);
+        const [emailGate, ipGate] = await Promise.all([
+          consume(`auth:email:${normalizedEmail}`, 5, 60 * 1000),
+          consume(`auth:ip:${ip}`, 30, 60 * 1000),
+        ]);
         if (!emailGate.ok || !ipGate.ok) {
           // NextAuth's authorize can only signal failure by returning null —
           // throwing is treated as a generic error. Return null and let the

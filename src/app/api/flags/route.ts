@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requestMeta } from "@/lib/api-auth";
+import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 
 const createSchema = z.object({
@@ -34,6 +34,16 @@ export async function POST(req: Request) {
     );
   }
   const f = parsed.data;
+
+  // AUTHZ-IDOR-001: gate cross-centre flag creation. The body's clientId can
+  // be any ID — without this, Centre-A admin could tag a Centre-B patient.
+  const target = await prisma.client.findUnique({
+    where: { id: f.clientId },
+    select: { centreId: true },
+  });
+  if (!target) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, target);
+  if (scope) return scope;
 
   const flag = await prisma.clientFlag.create({
     data: {
@@ -74,8 +84,14 @@ export async function PATCH(req: Request) {
   }
   const f = parsed.data;
 
-  const existing = await prisma.clientFlag.findUnique({ where: { id: f.id } });
+  const existing = await prisma.clientFlag.findUnique({
+    where: { id: f.id },
+    include: { client: { select: { centreId: true } } },
+  });
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // AUTHZ-IDOR-001: scope updates by the flag's owning-client centre.
+  const scope = await assertCentreScope(auth.user, existing.client);
+  if (scope) return scope;
 
   const updated = await prisma.clientFlag.update({
     where: { id: f.id },

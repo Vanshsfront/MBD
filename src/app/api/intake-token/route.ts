@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 import { activeCentreId } from "@/lib/centre";
+import { generateSecureToken } from "@/lib/tokens";
 
 const TOKEN_TTL_MIN = 60;
 
@@ -26,8 +27,10 @@ export async function POST(req: Request) {
   // looking at* — not always their home centre. PRD §6.10.
   const centreId = (await activeCentreId()) ?? auth.user.centreId ?? null;
 
+  // CRYPT-008: explicit CSPRNG token overrides the schema's CUID v1 default.
   const token = await prisma.intakeToken.create({
     data: {
+      token: generateSecureToken(),
       expiresAt,
       centreId,
       label,

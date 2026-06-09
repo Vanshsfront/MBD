@@ -104,6 +104,22 @@ export async function DashboardShell({
           <form
             action={async () => {
               "use server";
+              // AUTH-007: bump sessionVersion before clearing the cookie so
+              // any other device still holding the JWT is rejected by
+              // api-auth.ts:verifySessionVersion on its next request. A
+              // logout that doesn't revoke the token is a logout in name
+              // only. DB failure must not block sign-out.
+              const sess = await auth();
+              if (sess?.user?.id) {
+                try {
+                  await prisma.staff.update({
+                    where: { id: sess.user.id },
+                    data: { sessionVersion: { increment: 1 } },
+                  });
+                } catch {
+                  // swallow — sign-out proceeds either way
+                }
+              }
               await signOut({ redirectTo: "/login" });
             }}
           >

@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   // Loose rate limit — page navigations are bursty (5 metrics per nav is
   // typical) but a single client should not produce more than ~60/minute
   // under normal conditions.
-  const rl = enforce(`rum:${clientIp(req)}`, 120, 60 * 1000);
+  const rl = await enforce(`rum:${clientIp(req)}`, 120, 60 * 1000);
   if (rl) return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
 
   let raw: unknown;
