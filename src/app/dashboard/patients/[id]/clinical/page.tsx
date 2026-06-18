@@ -19,6 +19,7 @@ import {
   isFirstVisitTemplate,
 } from "@/lib/clinical-schemas";
 import { ClinicalShell } from "@/components/clinical/clinical-shell";
+import { SessionTimerHeader } from "@/components/clinical/session-timer-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { PastRecordsList } from "./past-records-list";
 
@@ -71,6 +72,22 @@ export default async function ClinicalPage({
         take: 1,
         select: { id: true, createdAt: true, consentSigned: true, consentMethod: true },
       },
+      // Therapists in appt-driven departments (Yoga, Massage, S&C) often
+      // touch a patient via Appointment rather than a formal ClientDoctorAssignment.
+      // Match the layout's "any appointment counts as ownership" policy and
+      // pull the therapist's department for template-fallback when no
+      // assignment row exists.
+      appointments: {
+        where: isClinicalRole(session.user.role)
+          ? { therapistId: session.user.id }
+          : undefined,
+        select: {
+          id: true,
+          therapist: { select: { department: { select: { name: true } } } },
+        },
+        orderBy: { startTime: "desc" },
+        take: 1,
+      },
     },
   });
   if (!client) notFound();
@@ -109,9 +126,13 @@ export default async function ClinicalPage({
   const ownedConsultation = pastConsultations.some(
     (c) => c.consultantId === session.user.id,
   );
+  // Therapists in appt-driven departments (Yoga, Massage, S&C) often have
+  // no assignment row — appointments are the relationship. Match the layout's
+  // policy so clicking "Clinical record" doesn't silently bounce.
+  const ownedAppointment = client.appointments[0] ?? null;
 
-  // Clinical roles: no assignment AND no consultation → not theirs at all.
-  if (isClinical && !ownActive && !ownEnded && !ownedConsultation) {
+  // Clinical roles: no assignment AND no consultation AND no appointment → not theirs at all.
+  if (isClinical && !ownActive && !ownEnded && !ownedConsultation && !ownedAppointment) {
     redirect("/dashboard/patients");
   }
 
@@ -123,7 +144,10 @@ export default async function ClinicalPage({
   let department: string | null = null;
   if (isClinical) {
     const own = ownActive ?? ownEnded;
-    department = own?.staff?.department?.name ?? null;
+    department =
+      own?.staff?.department?.name ??
+      ownedAppointment?.therapist?.department?.name ??
+      null;
   } else {
     // FO/Owner/Admin — first active, else first ended.
     const first =
@@ -210,8 +234,78 @@ export default async function ClinicalPage({
     !!ownDraft || // resume an active draft
     consultMode; // explicit "Start consultation"
 
+  // Live-timer state — only clinical roles get the Begin/End buttons.
+  // Pull the most-recent IN_PROGRESS session for this client+therapist so
+  // refreshing the page (or coming back after a tab switch) restores the
+  // running timer without losing elapsed time.
+  const activeSession = isClinical
+    ? await prisma.session.findFirst({
+        where: {
+          clientId: id,
+          therapistId: session.user.id,
+          status: "IN_PROGRESS",
+        },
+        orderBy: { startedAt: "desc" },
+        select: {
+          id: true,
+          startedAt: true,
+          sessionFormType: true,
+          packageId: true,
+          package: {
+            select: {
+              id: true,
+              totalSessions: true,
+              completedSessions: true,
+              serviceMix: true,
+            },
+          },
+        },
+      })
+    : null;
+  // Derive a display name from the package's serviceMix (first service +N).
+  // Stays in sync with the start-route's response shape.
+  const linkedPackage = (() => {
+    if (!activeSession?.package) return null;
+    const p = activeSession.package;
+    let name = "Package";
+    try {
+      const arr = JSON.parse(p.serviceMix);
+      if (Array.isArray(arr)) {
+        const first = arr.find((m) => m && typeof m.serviceName === "string")?.serviceName;
+        if (first) name = arr.length > 1 ? `${first} +${arr.length - 1}` : first;
+      }
+    } catch {
+      /* keep generic */
+    }
+    return {
+      id: p.id,
+      name,
+      remaining: Math.max(0, p.totalSessions - p.completedSessions),
+      totalSessions: p.totalSessions,
+    };
+  })();
+
   return (
     <div className="space-y-4">
+      {/* Live session timer + Begin/End controls. Renders for clinical
+        * roles only; non-clinical viewers (FO/ADMIN reviewing a record)
+        * see nothing here. */}
+      <SessionTimerHeader
+        clientId={id}
+        consultationId={ownDraft?.id ?? null}
+        initialActive={
+          activeSession && activeSession.startedAt
+            ? {
+                id: activeSession.id,
+                startedAt: activeSession.startedAt.toISOString(),
+                sessionFormType: activeSession.sessionFormType,
+              }
+            : null
+        }
+        initialLinkedPackage={linkedPackage}
+        canStart={isClinical && !viewOnlyReassignedAway}
+      />
+
       <PastRecordsList
         clientId={id}
         consentSigned={consentSigned}

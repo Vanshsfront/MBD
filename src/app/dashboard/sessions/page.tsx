@@ -180,7 +180,15 @@ export default async function SessionsPage({
                           hour: "2-digit",
                           minute: "2-digit",
                         })}{" "}
-                        · {s.service.name} · {s.therapist.name}
+                        · {s.service?.name ?? s.sessionFormType ?? "—"} · {s.therapist.name}
+                        {s.recordedDurationMin != null ? (
+                          <span className="ml-2 chip text-[10px]">
+                            {s.recordedDurationMin} min
+                          </span>
+                        ) : null}
+                        {s.sessionFormType && s.service?.name ? (
+                          <span className="ml-1 chip text-[10px]">{s.sessionFormType}</span>
+                        ) : null}
                       </p>
                       {s.treatmentNotes ? (
                         <p className="mt-1 line-clamp-2 text-xs">{s.treatmentNotes}</p>

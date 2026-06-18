@@ -383,6 +383,7 @@ model Consultation {
 
   packages    Package[]
   attachments ConsultationAttachment[]
+  session     Session?
 
   date      DateTime @default(now())
   createdAt DateTime @default(now())
@@ -474,7 +475,19 @@ model Session {
   sessionDate     DateTime
   treatmentNotes  String?
   progressUpdates String?
-  status          String   @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELLED | NO_SHOW
+  status          String   @default("SCHEDULED") // SCHEDULED | IN_PROGRESS | COMPLETED | CANCELLED | NO_SHOW
+
+  // Live-timer fields. startedAt set on "Begin session"; endedAt +
+  // recordedDurationMin on "End session". sessionFormType = what was actually
+  // done this visit (independent of the appointment's billable service).
+  startedAt           DateTime?
+  endedAt             DateTime?
+  recordedDurationMin Int?
+  sessionFormType     String? // intake | followup | needling | cupping | manual | other
+
+  // Optional 1:1 link to the Consultation filled during this session.
+  consultationId String?       @unique
+  consultation   Consultation? @relation(fields: [consultationId], references: [id])
 
   allotments       String? // JSON: [{ therapistId, therapistName, serviceId, serviceName }]
   perSessionAmount Float?
@@ -488,13 +501,21 @@ model Session {
   therapistId String
   therapist   Staff  @relation(fields: [therapistId], references: [id])
 
-  serviceId String
-  service   Service @relation(fields: [serviceId], references: [id])
+  // Nullable: live-timer sessions started from the clinical record may not
+  // have a billable service yet (the consultation determines it). Legacy
+  // session-create flows still set this eagerly.
+  serviceId String?
+  service   Service? @relation(fields: [serviceId], references: [id])
 
   centreId String?
   centre   Centre? @relation(fields: [centreId], references: [id])
 
   inventoryUsage String? // JSON: [{ inventoryItemId, productName, qty }]
+
+  // Optional link to the booked Appointment this live session fulfils — lets
+  // End-session mark the appointment COMPLETED + inherit its package/service.
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -610,6 +631,9 @@ model Appointment {
   // serviceMix consumed counter atomically.
   packageId String?
   package   Package? @relation(fields: [packageId], references: [id])
+
+  // Live-timer sessions fulfilling this appointment (reverse of Session.appointmentId).
+  sessions  Session[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
