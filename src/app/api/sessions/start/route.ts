@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requestMeta } from "@/lib/api-auth";
+import { requireAuth, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { isClinicalRole } from "@/lib/permissions";
 import { createAuditLog } from "@/lib/audit";
 
@@ -82,6 +82,16 @@ export async function POST(req: Request) {
   }
   const f = parsed.data;
   const therapistId = auth.user.id;
+
+  // Centre-scope guard (audit parity with the other mutation routes): a
+  // clinician may only start a session for a patient in their active centre.
+  const client = await prisma.client.findUnique({
+    where: { id: f.clientId },
+    select: { id: true, centreId: true },
+  });
+  if (!client) return NextResponse.json({ error: "client_not_found" }, { status: 404 });
+  const scope = await assertCentreScope(auth.user, client);
+  if (scope) return scope;
 
   // Block if already mid-session for this patient. Forces an End before a
   // new Begin — keeps the timing log clean.

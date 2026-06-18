@@ -3,7 +3,7 @@
 // Shared primitives for the per-template clinical-record forms. Keeps each
 // template component focused on its own data shape, not duplicated layout.
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -81,6 +81,10 @@ function slug(s: string): string {
 // ───────── Vitals + Comorbidities (shared by every consultation/followup) ─────────
 
 export interface VitalsValue extends Record<string, unknown> {
+  // Canonical units stored: weightKg (always kg), heightCm (always cm),
+  // bmi (kg/m²), pulseBpm, spo2 (percentage), bp ("systolic/diastolic" string).
+  // The UI lets the user type lbs/inches and converts on the fly — what
+  // lands in formData is always canonical so templates render consistently.
   weightKg?: string;
   heightCm?: string;
   bmi?: string;
@@ -88,6 +92,34 @@ export interface VitalsValue extends Record<string, unknown> {
   spo2Device?: string;
   pulseBpm?: string;
   bp?: string;
+}
+
+// Strip everything that isn't a digit or one decimal point. Used on every
+// numeric vitals input so users physically cannot type "abc" — the field
+// just won't accept the keystroke.
+function sanitiseNumeric(v: string): string {
+  // Allow leading minus? No — vitals are never negative.
+  const cleaned = v.replace(/[^0-9.]/g, "");
+  // Collapse multiple dots to the first one.
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot === -1) return cleaned;
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+}
+
+function sanitiseInt(v: string): string {
+  return v.replace(/[^0-9]/g, "");
+}
+
+// Two-field BP: each side is its own numeric input. Stored as "120/80" in
+// formData.vitals.bp so the existing DOCX renderer keeps working.
+function parseBp(bp: string | undefined): { sys: string; dia: string } {
+  if (!bp) return { sys: "", dia: "" };
+  const [sys, dia] = bp.split("/").map((s) => s.trim());
+  return { sys: sys ?? "", dia: dia ?? "" };
+}
+function composeBp(sys: string, dia: string): string {
+  if (!sys && !dia) return "";
+  return `${sys}/${dia}`;
 }
 
 export function VitalsField({
@@ -103,50 +135,144 @@ export function VitalsField({
     (k: keyof VitalsValue, v: string) => onChange({ ...value, [k]: v }),
     [value, onChange],
   );
+  const [weightUnit, setWeightUnit] = useState<"kg" | "lbs">("kg");
+  const [heightUnit, setHeightUnit] = useState<"cm" | "in">("cm");
+  const bp = parseBp(value.bp);
+
+  // Convert on the way IN (when toggling units, display the canonical value
+  // in the new unit). The stored value never changes — only the display.
+  const weightDisplay = (() => {
+    const kg = value.weightKg ?? "";
+    if (!kg || weightUnit === "kg") return kg;
+    const n = parseFloat(kg);
+    if (Number.isNaN(n)) return "";
+    return (n * 2.20462).toFixed(1);
+  })();
+  const heightDisplay = (() => {
+    const cm = value.heightCm ?? "";
+    if (!cm || heightUnit === "cm") return cm;
+    const n = parseFloat(cm);
+    if (Number.isNaN(n)) return "";
+    return (n / 2.54).toFixed(1);
+  })();
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <Field label="Weight (kg)">
-        <Input
-          value={value.weightKg ?? ""}
-          onChange={(e) => set("weightKg", e.target.value)}
-          disabled={disabled}
-        />
+      <Field label="Weight">
+        <div className="flex gap-1.5">
+          <Input
+            inputMode="decimal"
+            pattern="[0-9]*\.?[0-9]*"
+            value={weightDisplay}
+            onChange={(e) => {
+              const v = sanitiseNumeric(e.target.value);
+              if (!v) return set("weightKg", "");
+              if (weightUnit === "kg") return set("weightKg", v);
+              // Input was lbs — convert to kg before storing.
+              const n = parseFloat(v);
+              set("weightKg", Number.isNaN(n) ? "" : (n / 2.20462).toFixed(2));
+            }}
+            disabled={disabled}
+            className="flex-1"
+          />
+          <select
+            value={weightUnit}
+            onChange={(e) => setWeightUnit(e.target.value as "kg" | "lbs")}
+            disabled={disabled}
+            className="h-9 rounded-md border border-input bg-card px-2 text-sm"
+            aria-label="Weight unit"
+          >
+            <option value="kg">kg</option>
+            <option value="lbs">lbs</option>
+          </select>
+        </div>
       </Field>
-      <Field label="Height (cm)">
-        <Input
-          value={value.heightCm ?? ""}
-          onChange={(e) => set("heightCm", e.target.value)}
-          disabled={disabled}
-        />
+      <Field label="Height">
+        <div className="flex gap-1.5">
+          <Input
+            inputMode="decimal"
+            pattern="[0-9]*\.?[0-9]*"
+            value={heightDisplay}
+            onChange={(e) => {
+              const v = sanitiseNumeric(e.target.value);
+              if (!v) return set("heightCm", "");
+              if (heightUnit === "cm") return set("heightCm", v);
+              const n = parseFloat(v);
+              set("heightCm", Number.isNaN(n) ? "" : (n * 2.54).toFixed(1));
+            }}
+            disabled={disabled}
+            className="flex-1"
+          />
+          <select
+            value={heightUnit}
+            onChange={(e) => setHeightUnit(e.target.value as "cm" | "in")}
+            disabled={disabled}
+            className="h-9 rounded-md border border-input bg-card px-2 text-sm"
+            aria-label="Height unit"
+          >
+            <option value="cm">cm</option>
+            <option value="in">in</option>
+          </select>
+        </div>
       </Field>
       <Field label="BMI">
         <Input
+          inputMode="decimal"
+          pattern="[0-9]*\.?[0-9]*"
           value={value.bmi ?? ""}
-          onChange={(e) => set("bmi", e.target.value)}
+          onChange={(e) => set("bmi", sanitiseNumeric(e.target.value))}
           disabled={disabled}
         />
       </Field>
       <Field label="Pulse (bpm)">
         <Input
+          inputMode="numeric"
+          pattern="[0-9]*"
           value={value.pulseBpm ?? ""}
-          onChange={(e) => set("pulseBpm", e.target.value)}
+          onChange={(e) => set("pulseBpm", sanitiseInt(e.target.value))}
           disabled={disabled}
         />
       </Field>
       <Field label="SpO₂ %">
         <Input
+          inputMode="numeric"
+          pattern="[0-9]*"
           value={value.spo2 ?? ""}
-          onChange={(e) => set("spo2", e.target.value)}
+          onChange={(e) => set("spo2", sanitiseInt(e.target.value))}
           disabled={disabled}
+          maxLength={3}
         />
       </Field>
       <Field label="BP (mmHg)">
-        <Input
-          value={value.bp ?? ""}
-          onChange={(e) => set("bp", e.target.value)}
-          placeholder="120/80"
-          disabled={disabled}
-        />
+        {/* Two-field BP — physically separated systolic / diastolic. The
+            template renderer reads formData.vitals.bp as "systolic/diastolic"
+            (or just "systolic" if diastolic is blank), so we compose on the
+            way out. No more stray "/" in the rendered output for empty BPs. */}
+        <div className="flex items-center gap-1.5">
+          <Input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={bp.sys}
+            onChange={(e) => set("bp", composeBp(sanitiseInt(e.target.value), bp.dia))}
+            disabled={disabled}
+            placeholder="120"
+            maxLength={3}
+            className="flex-1"
+            aria-label="Systolic"
+          />
+          <span aria-hidden className="text-muted-foreground">/</span>
+          <Input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={bp.dia}
+            onChange={(e) => set("bp", composeBp(bp.sys, sanitiseInt(e.target.value)))}
+            disabled={disabled}
+            placeholder="80"
+            maxLength={3}
+            className="flex-1"
+            aria-label="Diastolic"
+          />
+        </div>
       </Field>
     </div>
   );

@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requestMeta } from "@/lib/api-auth";
+import { requireAuth, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 
 const endSchema = z.object({
@@ -76,6 +76,14 @@ export async function PATCH(
   if (!isOwner && !isManagement) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+
+  // Centre-scope guard (audit parity): scope by the patient's centre.
+  const scopeClient = await prisma.client.findUnique({
+    where: { id: existing.clientId },
+    select: { centreId: true },
+  });
+  const scope = await assertCentreScope(auth.user, scopeClient);
+  if (scope) return scope;
 
   if (existing.status !== "IN_PROGRESS") {
     return NextResponse.json(
