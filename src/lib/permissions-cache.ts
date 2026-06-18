@@ -7,7 +7,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import { _setPermissionOverrides, _permissionOverrideLoadedAt } from "./permissions";
 
-const TTL_MS = 30_000;
+const TTL_MS = 10_000;
 
 export async function ensurePermissionsCacheFresh(): Promise<void> {
   const loadedAt = _permissionOverrideLoadedAt();

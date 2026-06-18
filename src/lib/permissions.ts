@@ -55,6 +55,7 @@ export const PERMISSIONS = [
   "admin:audit_log",
   "admin:client_flags",
   "admin:attendance",
+  "admin:manage_permissions", // edit the role×permission matrix — OWNER/DEV only (they hold ALL_PERMISSIONS; not listed in any other role)
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

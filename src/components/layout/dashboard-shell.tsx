@@ -13,6 +13,7 @@ import { CentreSwitcher } from "@/components/layout/centre-switcher";
 import { SearchTrigger } from "@/components/layout/search-trigger";
 import { NavLink, type NavIconKey } from "@/components/layout/nav-link";
 import type { Role } from "@/lib/permissions";
+import { ensurePermissionsCacheFresh } from "@/lib/permissions-cache";
 
 // Dashboard shell — warm, neumorphic chrome matching the legacy codebase.
 // The whole shell sits on .bg-gradient-app so the warm cream gradient shows
@@ -28,6 +29,11 @@ export async function DashboardShell({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  // Prime the role-permission override cache so nav visibility + page-access
+  // gates (which call hasPermission directly) reflect live overrides — not
+  // just the API routes that go through requirePermission.
+  await ensurePermissionsCacheFresh();
 
   const role = session.user.role as Role;
   const items = navItemsFor(role);
