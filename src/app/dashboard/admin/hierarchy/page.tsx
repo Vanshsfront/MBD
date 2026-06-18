@@ -3,10 +3,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type Role } from "@/lib/permissions";
+import {
+  hasPermission,
+  type Role,
+  PERMISSIONS,
+  ROLES,
+  permissionsFor,
+  type Permission,
+} from "@/lib/permissions";
+import { ensurePermissionsCacheFresh } from "@/lib/permissions-cache";
 import { activeCentreId } from "@/lib/centre";
 import { GitBranch, Crown, ShieldCheck, Briefcase, ArrowRight, Building2, Stethoscope } from "lucide-react";
 import { DraggableTree } from "./draggable-tree";
+import { PermissionsMatrix } from "./permissions-matrix";
 import {
   StaffCard,
   AddStaffButton,
@@ -65,6 +74,47 @@ export default async function HierarchyPage() {
   const owner = staff.find((s) => s.role === "OWNER");
   const admins = staff.filter((s) => s.role === "ADMIN");
   const fo = staff.filter((s) => s.role === "FRONT_OFFICE");
+
+  // Permissions matrix — only OWNER + DEV can edit. Load current overrides
+  // so the matrix renders the live state. ensurePermissionsCacheFresh()
+  // primes the same in-memory cache that hasPermission() reads.
+  const canEditPermissions =
+    session.user.role === "OWNER" || session.user.role === "DEV";
+  let permissionOverrideRows: Array<{ role: string; permission: string; granted: boolean }> = [];
+  if (canEditPermissions) {
+    await ensurePermissionsCacheFresh();
+    permissionOverrideRows = await prisma.rolePermission.findMany({
+      select: { role: true, permission: true, granted: true },
+    });
+  }
+  const overridesMatrix: Record<Role, Record<string, boolean>> = {
+    OWNER: {},
+    ADMIN: {},
+    FRONT_OFFICE: {},
+    CONSULTANT: {},
+    THERAPIST: {},
+    DEV: {},
+  };
+  for (const r of permissionOverrideRows) {
+    if (!(ROLES as readonly string[]).includes(r.role)) continue;
+    overridesMatrix[r.role as Role][r.permission] = r.granted;
+  }
+  const defaultsMatrix: Record<Role, ReadonlyArray<string>> = {
+    OWNER: permissionsFor("OWNER") as readonly string[],
+    ADMIN: permissionsFor("ADMIN") as readonly string[],
+    FRONT_OFFICE: permissionsFor("FRONT_OFFICE") as readonly string[],
+    CONSULTANT: permissionsFor("CONSULTANT") as readonly string[],
+    THERAPIST: permissionsFor("THERAPIST") as readonly string[],
+    DEV: permissionsFor("DEV") as readonly string[],
+  };
+  // Group permissions by prefix for the matrix UI (Patients, Appointments,
+  // Billing, etc.) — derived once from the permission strings themselves.
+  const PERMISSION_GROUPS: Record<string, string[]> = {};
+  for (const p of PERMISSIONS as readonly Permission[]) {
+    const group = p.split(":")[0] ?? "other";
+    const label = group.charAt(0).toUpperCase() + group.slice(1);
+    (PERMISSION_GROUPS[label] ??= []).push(p);
+  }
 
   // Anyone in a clinical department is listed under it (an ADMIN who is also a
   // physiotherapist appears in both Administrators and Physiotherapy).
@@ -181,6 +231,16 @@ export default async function HierarchyPage() {
           ))}
         </BranchesRow>
       </DraggableTree>
+
+      {canEditPermissions ? (
+        <PermissionsMatrix
+          roles={ROLES}
+          permissions={PERMISSIONS}
+          groups={PERMISSION_GROUPS}
+          defaults={defaultsMatrix}
+          overrides={overridesMatrix}
+        />
+      ) : null}
     </div>
   );
 }

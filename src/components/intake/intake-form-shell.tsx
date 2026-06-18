@@ -22,6 +22,10 @@ import { SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/lib/categories";
 import { TermsModal } from "@/components/intake/terms-modal";
 
 export type IntakeSex = "" | "M" | "F" | "OTHER";
+// Hand dominance — propagated to physiotherapy / S&C / FAB templates via
+// {{patient.dominance}} (see /api/consultations/[id]/render/route.ts). Empty
+// string means "not asked"; the templates render blank in that case.
+export type IntakeDominance = "" | "RIGHT" | "LEFT" | "AMBI";
 
 export interface IntakeFormState {
   firstName: string;
@@ -30,6 +34,7 @@ export interface IntakeFormState {
   phone: string;
   dob: string;
   sex: IntakeSex;
+  dominance: IntakeDominance;
   occupation: string;
   sport: string;
   addressLine1: string;
@@ -56,6 +61,7 @@ export const INITIAL_INTAKE_FORM: IntakeFormState = {
   phone: "",
   dob: "",
   sex: "",
+  dominance: "",
   occupation: "",
   sport: "",
   addressLine1: "",
@@ -81,6 +87,7 @@ export type IntakePayload = {
   dob: string;
   age?: number;
   sex: "M" | "F" | "OTHER";
+  dominance?: "RIGHT" | "LEFT" | "AMBI";
   occupation?: string;
   sport?: string;
   addressLine1: string;
@@ -177,6 +184,7 @@ function buildPayload(form: IntakeFormState, computedAge: string): IntakePayload
     dob: form.dob,
     age: computedAge ? Number(computedAge) : undefined,
     sex: form.sex as "M" | "F" | "OTHER",
+    dominance: form.dominance || undefined,
     occupation: form.occupation.trim() || undefined,
     sport: form.sport.trim() || undefined,
     addressLine1: form.addressLine1.trim(),
@@ -459,6 +467,21 @@ function PageOne({
               <option value="M">Male</option>
               <option value="F">Female</option>
               <option value="OTHER">Prefer not to say / other</option>
+            </select>
+          </Field>
+          <Field label="Dominance">
+            <select
+              value={form.dominance}
+              onChange={(e) =>
+                update("dominance", e.target.value as IntakeFormState["dominance"])
+              }
+              aria-label="Hand dominance"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            >
+              <option value="">Select…</option>
+              <option value="RIGHT">Right-handed</option>
+              <option value="LEFT">Left-handed</option>
+              <option value="AMBI">Ambidextrous</option>
             </select>
           </Field>
           <Field label="Occupation">

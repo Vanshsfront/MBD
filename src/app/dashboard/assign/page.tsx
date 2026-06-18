@@ -27,9 +27,19 @@ export default async function AssignPage() {
 
   const [drafts, therapistsAndConsultants, referralSources, assignedTodayCount, recentAssignmentsForWait] =
     await Promise.all([
+      // Queue includes both DRAFT clients (intake → assign → consent path)
+      // AND already-ACTIVE clients who never finished consent (FO switched
+      // away mid-flow). The latter get auto-routed to the consent step on
+      // selection so they can finish without going through assignment again.
       prisma.client.findMany({
         where: {
-          status: "DRAFT",
+          OR: [
+            { status: "DRAFT" },
+            {
+              status: "ACTIVE",
+              intakeForms: { some: { consentSigned: false } },
+            },
+          ],
           ...(centreId ? { centreId } : {}),
         },
         orderBy: { createdAt: "asc" },
@@ -156,6 +166,8 @@ export default async function AssignPage() {
             createdAt: c.createdAt.toISOString(),
             selectedCategories: parseSelected(c.intakeForms[0]?.selectedCategories ?? null),
             intakeFormId: c.intakeForms[0]?.id ?? null,
+            consentSigned: c.intakeForms[0]?.consentSigned ?? false,
+            status: c.status === "ACTIVE" ? "ACTIVE" : "DRAFT",
           }))}
           therapists={therapistsAndConsultants.map((s) => ({
             id: s.id,

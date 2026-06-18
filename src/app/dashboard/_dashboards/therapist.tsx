@@ -144,12 +144,17 @@ export async function TherapistDashboard({
   }).length;
   const lockedDenom = Math.max(weekConsultsCompleted.length, weekConsultsLockedOnTime, 1);
 
-  // Today-strip data: next appointment + draft count + change requests
+  // Today-strip data: next appointment + draft count + change requests.
+  // "Next" only makes sense for an appointment that hasn't reached a terminal
+  // state — exclude CANCELLED/COMPLETED/NO_SHOW so a finished appt with a
+  // still-future endTime stops being tagged Next over a truly upcoming one.
+  const isActiveAppt = (s: string) =>
+    s !== "CANCELLED" && s !== "COMPLETED" && s !== "NO_SHOW";
   const nextApptTime = todaysAppointments.find(
-    (a) => a.startTime >= now && a.status !== "CANCELLED",
+    (a) => a.startTime >= now && isActiveAppt(a.status),
   )?.startTime;
   const nextUpId = todaysAppointments.find(
-    (a) => a.status !== "CANCELLED" && a.endTime > now,
+    (a) => isActiveAppt(a.status) && a.endTime > now,
   )?.id;
   // Hours billed: sum durations across this week's completed appointments.
   const hoursBilledWeekRows = await prisma.appointment.findMany({
@@ -189,11 +194,16 @@ export async function TherapistDashboard({
         </div>
       </div>
 
-      {/* Today strip — patient-centric (audit n=1) */}
+      {/* Today strip — patient-centric (audit n=1). Counter excludes
+        * cancelled + no-show so the headline number matches what's actually
+        * actionable on the day. */}
       <div className="fo-today">
         <span className="fo-today-item">
           <span className="dot live" aria-hidden />
-          <strong>{todaysAppointments.length}</strong> appointments today
+          <strong>
+            {todaysAppointments.filter((a) => isActiveAppt(a.status)).length}
+          </strong>{" "}
+          appointments today
           {nextApptTime ? <span className="muted">· next at {formatTime(nextApptTime)}</span> : null}
         </span>
         <span className="fo-today-div" />

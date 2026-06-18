@@ -138,7 +138,38 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   DEV: DEV_PERMS,
 };
 
+// DB-backed overrides on top of ROLE_PERMISSIONS. The cache is populated
+// by `ensurePermissionsCacheFresh()` in src/lib/permissions-cache.ts
+// (server-only — imports prisma). This file stays sync + client-safe so
+// it can be imported from both server and client components.
+//
+// Cold-boot before the first refresh → defaults apply, which is the right
+// safe-default. The editor's POST handler calls invalidatePermissionsCache
+// to force a re-read on the next request.
+type OverrideKey = string; // `${role}:${permission}`
+let permissionOverrides: { map: Map<OverrideKey, boolean>; loadedAt: number } | null = null;
+
+/** Internal — called by permissions-cache.ts after a DB read completes. */
+export function _setPermissionOverrides(rows: ReadonlyArray<{ role: string; permission: string; granted: boolean }>): void {
+  const map = new Map<OverrideKey, boolean>();
+  for (const r of rows) map.set(`${r.role}:${r.permission}`, r.granted);
+  permissionOverrides = { map, loadedAt: Date.now() };
+}
+
+/** Internal — for the cache helper to check whether a refresh is due. */
+export function _permissionOverrideLoadedAt(): number | null {
+  return permissionOverrides?.loadedAt ?? null;
+}
+
+export function invalidatePermissionsCache(): void {
+  permissionOverrides = null;
+}
+
 export function hasPermission(role: Role, permission: Permission): boolean {
+  if (permissionOverrides) {
+    const o = permissionOverrides.map.get(`${role}:${permission}`);
+    if (o !== undefined) return o;
+  }
   return ROLE_PERMISSIONS[role].includes(permission);
 }
 

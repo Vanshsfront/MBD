@@ -44,6 +44,12 @@ interface DraftClient {
   createdAt: string;
   selectedCategories: ServiceCategoryKey[];
   intakeFormId: string | null;
+  // True when the latest IntakeForm has consentSigned. Drives "consent
+  // already done — just needs assignment" vs "needs to sign" routing.
+  consentSigned: boolean;
+  // True when client.status === "ACTIVE" — they're past the assign step
+  // and only here to finish consent. Skips the assign step on selection.
+  status: "DRAFT" | "ACTIVE";
 }
 
 interface TherapistOption {
@@ -69,16 +75,30 @@ type Step = "intake" | "assign" | "consent" | "done";
 
 function initialStepFor(d: DraftClient | null): Step {
   if (!d) return "assign";
-  // Legacy chat: FO fills the intake form on behalf when the patient didn't
-  // come through the public QR link. PRD §4 A3 still keeps the QR path as
-  // primary; this is the fallback so the consent step at the end of the
-  // assign flow doesn't crash with `no_intake_form`.
-  return d.intakeFormId == null ? "intake" : "assign";
+  // No intake yet → start by capturing it. FO fills on behalf for walk-ins
+  // that didn't come through the public QR link (PRD §4 A3).
+  if (d.intakeFormId == null) return "intake";
+  // Already ACTIVE (past assignment) but consent never landed → resume at
+  // consent. The "switched away mid-consent" recovery path.
+  if (d.status === "ACTIVE" && !d.consentSigned) return "consent";
+  return "assign";
 }
 
 export function AssignDashboard({ drafts, therapists, referralSources }: Props) {
-  const [active, setActive] = useState<DraftClient | null>(drafts[0] ?? null);
-  const [step, setStep] = useState<Step>(initialStepFor(drafts[0] ?? null));
+  // Deep-link support: `/dashboard/assign?client=<id>` auto-selects that
+  // draft. Used by the "Intake pending" chip on the patient list — clicking
+  // it lands you here with the walk-in already focused.
+  const searchParams =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+  const requestedId = searchParams.get("client");
+  const initial =
+    (requestedId ? drafts.find((d) => d.id === requestedId) : null) ??
+    drafts[0] ??
+    null;
+  const [active, setActive] = useState<DraftClient | null>(initial);
+  const [step, setStep] = useState<Step>(initialStepFor(initial));
   const [list, setList] = useState<DraftClient[]>(drafts);
 
   function selectDraft(d: DraftClient) {

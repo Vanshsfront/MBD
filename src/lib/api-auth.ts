@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasPermission, type Permission, type Role } from "@/lib/permissions";
+import { ensurePermissionsCacheFresh } from "@/lib/permissions-cache";
 import { activeCentreId } from "@/lib/centre";
 import { prisma } from "@/lib/prisma";
 
@@ -42,6 +43,8 @@ async function verifySessionVersion(userId: string, jwtVersion: number): Promise
  * a discriminated union — callers use `if (!result.ok) return result.response`.
  */
 export async function requirePermission(permission: Permission): Promise<ApiAuthResult> {
+  // Warm the permissions override cache before checking — no-op when fresh.
+  await ensurePermissionsCacheFresh();
   const session = await auth();
   if (!session?.user) {
     return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };

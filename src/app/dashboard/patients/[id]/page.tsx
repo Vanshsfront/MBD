@@ -182,9 +182,33 @@ export default async function PatientOverview({
     };
   });
 
+  // FO-visible resume CTA: intake exists but consent never landed (likely
+  // FO switched views mid-flow). Direct-links into the assign queue with
+  // this client pre-selected; assign-client.tsx auto-jumps to the consent
+  // step when status=ACTIVE && consent missing.
+  const canResumeConsent =
+    hasIntake &&
+    !hasConsent &&
+    hasPermission(session.user.role, "patients:assign_therapist");
+
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
+        {canResumeConsent ? (
+          <Link
+            href={`/dashboard/assign?client=${id}`}
+            className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-5 py-3 text-sm transition-colors hover:bg-amber-100"
+          >
+            <div>
+              <p className="font-semibold text-amber-900">Consent not yet signed</p>
+              <p className="text-xs text-amber-800">
+                Intake is on file. Click to resume consent capture — patient signs once and you&apos;re done.
+              </p>
+            </div>
+            <span className="font-medium text-amber-900">Resume consent →</span>
+          </Link>
+        ) : null}
+
         <Card>
           <div className="p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -285,6 +309,7 @@ export default async function PatientOverview({
                     dob: client.dob ? client.dob.toISOString() : null,
                     age: client.age ?? null,
                     sex: client.sex ?? null,
+                    dominance: client.dominance ?? null,
                     occupation: client.occupation ?? null,
                     sport: client.sport ?? null,
                     maritalStatus: client.maritalStatus ?? null,
@@ -297,6 +322,7 @@ export default async function PatientOverview({
             <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
               <KV k="Date of birth" v={client.dob ? `${formatDate(client.dob)}${client.age != null ? ` · ${client.age}y` : ""}` : null} />
               <KV k="Sex" v={client.sex} />
+              <KV k="Dominance" v={dominanceLabel(client.dominance)} />
               <KV k="Phone" v={client.phone} />
               <KV k="Email" v={client.email} />
               <KV
@@ -508,4 +534,17 @@ function formatApptDay(d: Date): string {
 
 function formatApptTime(d: Date): string {
   return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function dominanceLabel(d: string | null | undefined): string | null {
+  switch (d) {
+    case "RIGHT":
+      return "Right-handed";
+    case "LEFT":
+      return "Left-handed";
+    case "AMBI":
+      return "Ambidextrous";
+    default:
+      return null;
+  }
 }

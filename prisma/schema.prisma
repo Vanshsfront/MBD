@@ -886,3 +886,21 @@ model AttendanceLog {
   type      String // CHECK_IN | CHECK_OUT
   createdAt DateTime @default(now())
 }
+
+// ─── ROLE PERMISSION (DB-backed overrides) ────────────
+// Hard-coded defaults live in src/lib/permissions.ts. Rows here override
+// the defaults — when a row exists for (role, permission), `granted` is
+// authoritative. Absence = use the default. Cleared via DELETE for a clean
+// "revert to default" rather than a "false" override.
+model RolePermission {
+  id         String  @id @default(cuid())
+  role       String // OWNER | ADMIN | FRONT_OFFICE | CONSULTANT | THERAPIST | DEV
+  permission String // matches src/lib/permissions.ts PERMISSIONS
+  granted    Boolean // true = explicit grant, false = explicit revoke
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([role, permission])
+  @@index([role])
+}

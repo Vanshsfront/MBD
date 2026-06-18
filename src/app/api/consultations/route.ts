@@ -217,27 +217,130 @@ export async function PATCH(req: Request) {
     validatedFormData = v.data;
   }
 
-  const updated = await prisma.consultation.update({
-    where: { id: f.id },
-    data: {
-      ...(validatedFormData ? { formData: JSON.stringify(validatedFormData) } : {}),
-      ...(f.chiefComplaints !== undefined ? { chiefComplaints: f.chiefComplaints } : {}),
-      ...(f.diagnosis !== undefined ? { diagnosis: f.diagnosis } : {}),
-      ...(f.planOfCare !== undefined ? { planOfCare: f.planOfCare } : {}),
-      ...(f.treatmentProtocol !== undefined ? { treatmentProtocol: f.treatmentProtocol } : {}),
-      ...(f.recommendedSessions !== undefined ? { recommendedSessions: f.recommendedSessions } : {}),
-      ...(f.recommendedServices !== undefined
-        ? {
-            recommendedServicesJson: f.recommendedServices.length
-              ? JSON.stringify(f.recommendedServices)
-              : null,
+  // If this PATCH transitions to COMPLETED and the therapist has an
+  // IN_PROGRESS session for this client, auto-end the session in the same
+  // transaction — that way package decrement happens exactly once at the
+  // moment the consultation locks. Closes the bypass where a therapist
+  // could mark a consultation COMPLETED without ever clicking End-session.
+  const flippingToCompleted =
+    f.status === "COMPLETED" && existing.status !== "COMPLETED";
+
+  const txResult = await prisma.$transaction(async (tx) => {
+    const updated = await tx.consultation.update({
+      where: { id: f.id },
+      data: {
+        ...(validatedFormData ? { formData: JSON.stringify(validatedFormData) } : {}),
+        ...(f.chiefComplaints !== undefined ? { chiefComplaints: f.chiefComplaints } : {}),
+        ...(f.diagnosis !== undefined ? { diagnosis: f.diagnosis } : {}),
+        ...(f.planOfCare !== undefined ? { planOfCare: f.planOfCare } : {}),
+        ...(f.treatmentProtocol !== undefined ? { treatmentProtocol: f.treatmentProtocol } : {}),
+        ...(f.recommendedSessions !== undefined ? { recommendedSessions: f.recommendedSessions } : {}),
+        ...(f.recommendedServices !== undefined
+          ? {
+              recommendedServicesJson: f.recommendedServices.length
+                ? JSON.stringify(f.recommendedServices)
+                : null,
+            }
+          : {}),
+        ...(f.followUp !== undefined ? { followUp: f.followUp } : {}),
+        ...(f.serviceId !== undefined ? { serviceId: f.serviceId } : {}),
+        ...(f.status ? { status: f.status } : {}),
+      },
+    });
+
+    let autoEndedSessionId: string | null = null;
+    let packageDecremented = false;
+    if (flippingToCompleted) {
+      // Find any live session for this client + author. Only one IN_PROGRESS
+      // at a time (start-session blocks duplicates), so first match is the one.
+      // DOUBLE-DECREMENT GUARD: we select WHERE status=IN_PROGRESS and flip it
+      // to COMPLETED atomically inside this same transaction. If the therapist
+      // already clicked End-session (/api/sessions/[id]/end), the session is no
+      // longer IN_PROGRESS and this query returns nothing — so the package is
+      // never consumed twice for the same session.
+      const openSession = await tx.session.findFirst({
+        where: {
+          clientId: existing.clientId,
+          therapistId: existing.consultantId,
+          status: "IN_PROGRESS",
+        },
+        select: { id: true, startedAt: true, packageId: true, serviceId: true, appointmentId: true },
+      });
+      if (openSession) {
+        const now = new Date();
+        const durationMin = openSession.startedAt
+          ? Math.max(
+              0,
+              Math.round((now.getTime() - openSession.startedAt.getTime()) / 60_000),
+            )
+          : 0;
+        // Atomic conditional flip: updateMany re-checks `status` under the row
+        // lock, so only ONE writer can move this session out of IN_PROGRESS. If
+        // /api/sessions/[id]/end raced us and already ended it, count === 0 and
+        // we skip the appointment-complete + package-decrement side effects —
+        // guaranteeing the package is consumed at most once across both paths,
+        // even under READ COMMITTED isolation.
+        const flipped = await tx.session.updateMany({
+          where: { id: openSession.id, status: "IN_PROGRESS" },
+          data: {
+            status: "COMPLETED",
+            endedAt: now,
+            recordedDurationMin: durationMin,
+            consultationId: updated.id,
+          },
+        });
+        if (flipped.count === 1) {
+          autoEndedSessionId = openSession.id;
+
+          // Mirror /api/sessions/[id]/end: mark the linked appointment COMPLETED.
+          if (openSession.appointmentId) {
+            await tx.appointment.update({
+              where: { id: openSession.appointmentId },
+              data: { status: "COMPLETED" },
+            });
           }
-        : {}),
-      ...(f.followUp !== undefined ? { followUp: f.followUp } : {}),
-      ...(f.serviceId !== undefined ? { serviceId: f.serviceId } : {}),
-      ...(f.status ? { status: f.status } : {}),
-    },
+
+          // Decrement the linked package — same logic as /api/sessions/[id]/end.
+          if (openSession.packageId) {
+            const pkg = await tx.package.findUnique({
+              where: { id: openSession.packageId },
+              select: { totalSessions: true, completedSessions: true, serviceMix: true, status: true },
+            });
+            if (pkg && pkg.status === "ACTIVE") {
+              const newCompleted = pkg.completedSessions + 1;
+              const mix = (() => {
+                try {
+                  const arr = JSON.parse(pkg.serviceMix);
+                  return Array.isArray(arr) ? arr : [];
+                } catch {
+                  return [];
+                }
+              })();
+              if (openSession.serviceId) {
+                const entry = mix.find(
+                  (m: { serviceId?: string }) => m.serviceId === openSession.serviceId,
+                );
+                if (entry) entry.consumed = (entry.consumed ?? 0) + 1;
+              }
+              await tx.package.update({
+                where: { id: openSession.packageId },
+                data: {
+                  completedSessions: newCompleted,
+                  serviceMix: JSON.stringify(mix),
+                  status: newCompleted >= pkg.totalSessions ? "COMPLETED" : "ACTIVE",
+                },
+              });
+              packageDecremented = true;
+            }
+          }
+        }
+      }
+      return { updated, autoEndedSessionId, packageDecremented, hadOpenSession: !!openSession };
+    }
+    return { updated, autoEndedSessionId, packageDecremented, hadOpenSession: false };
   });
+
+  const updated = txResult.updated;
 
   const changes = computeChanges(
     {
@@ -258,9 +361,23 @@ export async function PATCH(req: Request) {
     entityId: f.id,
     performedById: auth.user.id,
     changes,
+    metadata: flippingToCompleted
+      ? {
+          autoEndedSessionId: txResult.autoEndedSessionId,
+          packageDecremented: txResult.packageDecremented,
+          // Flag for ops review: consultation locked with no live session —
+          // package was never decremented through the normal path.
+          completedWithoutSession: !txResult.hadOpenSession,
+        }
+      : undefined,
     ipAddress: meta.ipAddress,
     userAgent: meta.userAgent,
   });
 
-  return NextResponse.json({ ok: true, consultationId: updated.id });
+  return NextResponse.json({
+    ok: true,
+    consultationId: updated.id,
+    ...(txResult.autoEndedSessionId ? { autoEndedSessionId: txResult.autoEndedSessionId } : {}),
+    ...(txResult.packageDecremented ? { packageDecremented: true } : {}),
+  });
 }

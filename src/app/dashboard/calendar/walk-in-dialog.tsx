@@ -138,7 +138,19 @@ export function WalkInAppointmentDialog({
           await readApiError(r2, { fallback: "Slot reserved partially — client created but the appointment failed." }),
         );
       }
-      toast.success(`Slot reserved · ${firstName} ${lastName} · intake pending`);
+      // Persistent action toast — stays visible until FO either completes
+      // the intake or dismisses it. Solves the "I booked a walk-in 2h ago
+      // and forgot to capture intake" papercut.
+      toast.success(`Slot reserved · ${firstName} ${lastName.trim() ? lastName : ""}`, {
+        description: "Patient hasn't done intake yet — click below when they arrive.",
+        duration: Infinity,
+        action: {
+          label: "Complete intake →",
+          onClick: () => {
+            window.location.href = `/dashboard/assign?client=${client.id}`;
+          },
+        },
+      });
       onCreated?.();
       close();
     } catch (err) {
@@ -228,11 +240,11 @@ export function WalkInAppointmentDialog({
               <Input
                 id="wi-dur"
                 type="number"
-                min={15}
-                max={240}
-                step={15}
+                min={5}
+                max={480}
+                step={1}
                 value={durationMin}
-                onChange={(e) => setDurationMin(Math.max(15, Number(e.target.value)))}
+                onChange={(e) => setDurationMin(Math.max(5, Number(e.target.value)))}
                 disabled={pending}
               />
             </div>

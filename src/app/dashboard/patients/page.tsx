@@ -241,17 +241,19 @@ export default async function PatientsPage({
                         <div className="flex flex-wrap items-center gap-1">
                           <FlagBadges flags={c.flags} max={2} />
                           {c.intakeStatus === "PENDING_INTAKE" ? (
-                            <span
+                            <Link
+                              href={`/dashboard/assign?client=${c.id}`}
                               className="chip"
                               style={{
                                 backgroundColor: "#fef3c7",
                                 color: "#854d0e",
                                 borderColor: "#fde68a",
                               }}
-                              title="Walk-in stub — complete the intake form when the patient arrives."
+                              title="Complete the walk-in's intake — click to jump straight to the form."
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              Intake pending
-                            </span>
+                              Intake pending →
+                            </Link>
                           ) : null}
                           {c.status === "INACTIVE" ? (
                             <Badge variant="outline">INACTIVE</Badge>

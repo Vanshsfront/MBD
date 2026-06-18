@@ -32,10 +32,14 @@ export default async function PackagesPage({
       invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true } },
       sessions: {
         orderBy: { sessionDate: "desc" },
-        take: 20,
+        take: 50,
         select: {
           id: true,
           sessionDate: true,
+          startedAt: true,
+          endedAt: true,
+          recordedDurationMin: true,
+          sessionFormType: true,
           status: true,
           therapist: { select: { name: true } },
           service: { select: { name: true } },
@@ -98,6 +102,10 @@ export default async function PackagesPage({
         sessions: p.sessions.map((s) => ({
           id: s.id,
           date: s.sessionDate.toISOString(),
+          startedAt: s.startedAt?.toISOString() ?? null,
+          endedAt: s.endedAt?.toISOString() ?? null,
+          durationMin: s.recordedDurationMin,
+          formType: s.sessionFormType,
           status: s.status,
           therapist: s.therapist?.name ?? null,
           service: s.service?.name ?? null,

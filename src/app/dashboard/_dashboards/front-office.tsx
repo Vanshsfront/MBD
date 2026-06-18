@@ -39,6 +39,7 @@ export async function FrontOfficeDashboard({
     pendingIntakeTokens,
     oldestPendingIntake,
     pendingDraftClients,
+    walkInsPendingIntake,
     todaysAppointments,
     nextAppt,
     unpaidInvoices,
@@ -56,6 +57,13 @@ export async function FrontOfficeDashboard({
     }),
     prisma.client.count({
       where: { ...centreFilter, status: "DRAFT" },
+    }),
+    // Walk-in stubs (intakeStatus=PENDING_INTAKE) — these are patients
+    // FO booked a slot for but who haven't done intake yet. Need to be
+    // completed on arrival; shown as a separate tile so they don't get
+    // lost in the "drafts" count.
+    prisma.client.count({
+      where: { ...centreFilter, intakeStatus: "PENDING_INTAKE" },
     }),
     prisma.appointment.findMany({
       where: {
@@ -135,12 +143,15 @@ export async function FrontOfficeDashboard({
 
   const nextAppointmentLabel = nextAppt ? minutesUntilLabel(nextAppt.startTime, now) : null;
 
-  // Identify the "next up" — the first appointment whose end time hasn't
-  // passed and that isn't cancelled. It either has started ("happening now")
-  // or is the very next one due.
+  // "Active" = not yet in a terminal state. Used by both the "next up" pin
+  // and the today-strip counter so they stay in sync. A COMPLETED appt with
+  // a still-future endTime must not get pinned as Next over a real upcoming
+  // one, and must not inflate the "actionable today" headline either.
+  const isActiveAppt = (s: string) =>
+    s !== "CANCELLED" && s !== "COMPLETED" && s !== "NO_SHOW";
   const nextUpId = (() => {
     const candidate = todaysAppointments.find(
-      (a) => a.status !== "CANCELLED" && a.endTime > now,
+      (a) => isActiveAppt(a.status) && a.endTime > now,
     );
     return candidate?.id ?? null;
   })();
@@ -180,7 +191,10 @@ export async function FrontOfficeDashboard({
         </span>
         <span className="fo-today-div" />
         <span className="fo-today-item">
-          <strong>{todaysAppointments.length}</strong> appointments today
+          <strong>
+            {todaysAppointments.filter((a) => isActiveAppt(a.status)).length}
+          </strong>{" "}
+          appointments today
           {nextAppointmentLabel ? <span className="muted">· next {nextAppointmentLabel}</span> : null}
         </span>
         <span className="fo-today-div" />
@@ -196,6 +210,29 @@ export async function FrontOfficeDashboard({
           ) : null}
         </span>
       </div>
+
+      {/* Walk-ins awaiting intake — full-width banner above the regular
+        * stat tiles. Only renders when there are pending ones; takes
+        * priority because they need same-day action when the patient
+        * arrives. */}
+      {walkInsPendingIntake > 0 ? (
+        <Link
+          href="/dashboard/patients?filter=all&q="
+          className="fo-stat-link block rounded-lg border border-amber-300 bg-amber-50 px-5 py-3 transition-colors hover:bg-amber-100"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                {walkInsPendingIntake} walk-in{walkInsPendingIntake === 1 ? "" : "s"} pending intake
+              </p>
+              <p className="text-xs text-amber-800">
+                Booked slots waiting for the patient to arrive and complete their intake form.
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 text-amber-900" aria-hidden />
+          </div>
+        </Link>
+      ) : null}
 
       {/* Action-led tiles */}
       <div className="fo-stats">

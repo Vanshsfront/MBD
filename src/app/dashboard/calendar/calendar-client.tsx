@@ -859,11 +859,11 @@ function CreateAppointmentDialog({
               <Label>Duration (min)</Label>
               <Input
                 type="number"
-                min={15}
-                max={240}
-                step={15}
+                min={5}
+                max={480}
+                step={1}
                 value={durationMin}
-                onChange={(e) => setDurationMin(Math.max(15, Number(e.target.value)))}
+                onChange={(e) => setDurationMin(Math.max(5, Number(e.target.value)))}
               />
             </div>
           </div>

@@ -34,6 +34,7 @@ interface InitialClient {
   dob: string | null; // ISO yyyy-mm-dd or null
   age: number | null;
   sex: string | null;
+  dominance: string | null;
   occupation: string | null;
   sport: string | null;
   maritalStatus: string | null;
@@ -53,6 +54,7 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
   const [dob, setDob] = useState(client.dob ?? "");
   const [age, setAge] = useState(client.age?.toString() ?? "");
   const [sex, setSex] = useState(client.sex ?? "");
+  const [dominance, setDominance] = useState(client.dominance ?? "");
   const [occupation, setOccupation] = useState(client.occupation ?? "");
   const [sport, setSport] = useState(client.sport ?? "");
   const [maritalStatus, setMaritalStatus] = useState(client.maritalStatus ?? "");
@@ -82,6 +84,7 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
         dob: dob ? new Date(dob).toISOString() : null,
         age: ageNum != null && Number.isFinite(ageNum) ? ageNum : null,
         sex: sex.trim() || null,
+        dominance: (dominance as "RIGHT" | "LEFT" | "AMBI" | "") || null,
         occupation: occupation.trim() || null,
         sport: sport.trim() || null,
         maritalStatus: maritalStatus.trim() || null,
@@ -192,6 +195,19 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
                 onChange={(e) => setSex(e.target.value)}
                 placeholder="M / F / Other"
               />
+            </Field>
+            <Field id="dominance" label="Dominance">
+              <select
+                id="dominance"
+                value={dominance}
+                onChange={(e) => setDominance(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              >
+                <option value="">—</option>
+                <option value="RIGHT">Right-handed</option>
+                <option value="LEFT">Left-handed</option>
+                <option value="AMBI">Ambidextrous</option>
+              </select>
             </Field>
             <Field id="marital" label="Marital status">
               <Input

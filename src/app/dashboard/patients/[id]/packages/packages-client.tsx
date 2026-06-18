@@ -35,6 +35,10 @@ interface PackageRow {
   sessions: Array<{
     id: string;
     date: string;
+    startedAt: string | null;
+    endedAt: string | null;
+    durationMin: number | null;
+    formType: string | null;
     status: string;
     therapist: string | null;
     service: string | null;
@@ -389,7 +393,7 @@ function PackageDetailCard({ pkg }: { pkg: PackageRow }) {
               ) : null}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-end gap-1">
             <Badge
               variant={
                 pkg.status === "ACTIVE"
@@ -403,6 +407,16 @@ function PackageDetailCard({ pkg }: { pkg: PackageRow }) {
             >
               {pkg.status}
             </Badge>
+            {pkg.status === "COMPLETED" && pkg.sessions.length > 0 ? (
+              <span className="text-[10px] text-muted-foreground tabular">
+                Completed on{" "}
+                {formatDate(
+                  pkg.sessions
+                    .filter((s) => s.status === "COMPLETED")
+                    .map((s) => s.endedAt ?? s.date)[0] ?? pkg.sessions[0]!.date,
+                )}
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -480,26 +494,42 @@ function PackageDetailCard({ pkg }: { pkg: PackageRow }) {
           </div>
         ) : null}
 
-        {/* Linked sessions */}
+        {/* Linked sessions — chronological consumption log. Survives package
+          * status flips (e.g. ACTIVE → COMPLETED), so a fully-consumed
+          * package still surfaces its full history. */}
         {pkg.sessions.length > 0 ? (
           <div className="mt-4 border-t border-[color:var(--border-light)] pt-4">
-            <p className="eyebrow !mb-2">Sessions ({pkg.sessions.length})</p>
+            <p className="eyebrow !mb-2">Session log ({pkg.sessions.length})</p>
             <div className="overflow-x-auto">
               <table className="tbl tbl-compact">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>When</th>
                     <th>Service</th>
+                    <th>Form type</th>
                     <th>Therapist</th>
+                    <th>Duration</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pkg.sessions.map((s) => (
                     <tr key={s.id}>
-                      <td className="muted tabular">{formatDate(s.date)}</td>
+                      <td className="muted tabular">
+                        {formatDateTime(s.startedAt ?? s.date)}
+                      </td>
                       <td>{s.service ?? "—"}</td>
+                      <td className="muted text-[11px]">
+                        {s.formType ? (
+                          <span className="chip text-[10px]">{s.formType}</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="muted">{s.therapist ?? "—"}</td>
+                      <td className="muted tabular">
+                        {s.durationMin != null ? `${s.durationMin} min` : "—"}
+                      </td>
                       <td>
                         <Badge
                           variant={
@@ -581,4 +611,17 @@ function formatDate(iso: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })} · ${d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })}`;
 }
