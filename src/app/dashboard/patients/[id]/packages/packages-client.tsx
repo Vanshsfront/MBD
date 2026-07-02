@@ -127,6 +127,7 @@ export function PackagesView({
   const [discountPercent, setDiscountPercent] = useState(0);
   const [promoCode, setPromoCode] = useState("");
   const [pending, setPending] = useState(false);
+  const [pendingProforma, setPendingProforma] = useState(false);
   const recommendationsAvailable = useMemo(
     () => recommendationsFor(consultationId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,6 +210,76 @@ export function PackagesView({
     }
   }
 
+  async function createProformaFromRecommendations() {
+    const recs = recommendationsFor(consultationId);
+    if (recs.length === 0) {
+      toast.message("No recommendations on the linked consultation.");
+      return;
+    }
+    setPendingProforma(true);
+    try {
+      // Map recommendations to lineItems shape
+      interface LineItemInput {
+        serviceId: string;
+        service: string;
+        hsnSac: string;
+        qty: number;
+        perAmount: number;
+        gstRate: number;
+      }
+      const lineItems: LineItemInput[] = [];
+      for (const rec of recs) {
+        const svc = services.find((s) => s.id === rec.serviceId);
+        if (!svc) continue;
+        lineItems.push({
+          serviceId: svc.id,
+          service: svc.name,
+          hsnSac: "", // Will be filled by the API
+          qty: rec.count * svc.participantCount,
+          perAmount: svc.basePrice,
+          gstRate: 0, // Default; the API may override based on service defaults
+        });
+      }
+
+      if (lineItems.length === 0) {
+        toast.error("No valid services in recommendations.");
+        return;
+      }
+
+      // validTill = 30 days from now
+      const validTill = new Date();
+      validTill.setDate(validTill.getDate() + 30);
+
+      const res = await fetch("/api/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          invoiceFlavor: "SERVICES",
+          invoiceType: "PROFORMA",
+          validTill: validTill.toISOString(),
+          lineItems,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(await readApiError(res, { fallback: "Couldn't create the proforma." }));
+      }
+      const out = (await res.json()) as { invoiceId: string; invoiceNumber: string };
+      toast.success(
+        <div className="flex items-center gap-2">
+          <span>Proforma created: {out.invoiceNumber}</span>
+          <Link href={`/dashboard/billing/invoices/${out.invoiceId}`} className="font-medium underline">
+            View
+          </Link>
+        </div>,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setPendingProforma(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {canEdit && pendingSuggestions.length > 0 ? (
@@ -268,6 +339,15 @@ export function PackagesView({
                     {recommendationsAvailable.length > 0
                       ? `Use therapist recommendations (${recommendationsAvailable.length})`
                       : "No recommendations"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={createProformaFromRecommendations}
+                    disabled={pendingProforma || recommendationsAvailable.length === 0}
+                  >
+                    {pendingProforma ? "Creating proforma…" : "Proforma of suggestions"}
                   </Button>
                 </div>
               </div>

@@ -369,6 +369,32 @@ async function main() {
     }
     console.log(`[seed] Services: ${serviceCount}`);
 
+    // Seed "Initial Consultation" billable service for Medical department
+    const medicalDept = deptByName.get("Medical");
+    if (medicalDept) {
+      await prisma.service.upsert({
+        where: {
+          name_departmentId_centreId: {
+            name: "Initial Consultation",
+            departmentId: medicalDept.id,
+            centreId: centre.id,
+          },
+        },
+        update: {},
+        create: {
+          name: "Initial Consultation",
+          basePrice: 500,
+          gstRate: medicalDept.defaultGstRate,
+          hsnSacCode: medicalDept.defaultHsnSac,
+          departmentId: medicalDept.id,
+          centreId: centre.id,
+          serviceType: "CLINIC",
+          participantCount: 1,
+        },
+      });
+      console.log("[seed] Initial Consultation service seeded (Medical)");
+    }
+
     // Products + InventoryItem
     let productCount = 0;
     for (const p of products) {

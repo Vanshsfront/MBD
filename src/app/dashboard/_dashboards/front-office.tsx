@@ -41,6 +41,7 @@ export async function FrontOfficeDashboard({
     pendingDraftClients,
     walkInsPendingIntake,
     todaysAppointments,
+    completedSessionsToday,
     nextAppt,
     unpaidInvoices,
     unpaidAgg,
@@ -77,7 +78,22 @@ export async function FrontOfficeDashboard({
         startTime: true,
         endTime: true,
         status: true,
-        client: { select: { firstName: true, lastName: true } },
+        client: { select: { firstName: true, lastName: true, id: true } },
+        therapist: { select: { name: true } },
+        service: { select: { name: true } },
+      },
+    }),
+    prisma.session.findMany({
+      where: {
+        ...centreFilter,
+        status: "COMPLETED",
+        sessionDate: { gte: startOfDay, lt: endOfDay },
+      },
+      orderBy: { sessionDate: "desc" },
+      select: {
+        id: true,
+        sessionDate: true,
+        client: { select: { firstName: true, lastName: true, id: true } },
         therapist: { select: { name: true } },
         service: { select: { name: true } },
       },
@@ -333,6 +349,57 @@ export async function FrontOfficeDashboard({
             </ul>
           )}
         </Card>
+
+        {completedSessionsToday.length > 0 ? (
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between border-b border-[color:var(--border-light)] px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold">After a session</h2>
+                <p className="text-xs text-muted-foreground">
+                  {completedSessionsToday.length} completed
+                </p>
+              </div>
+            </div>
+            <ul className="divide-y divide-[color:var(--border-light)]">
+              {completedSessionsToday.map((s) => (
+                <li key={s.id} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {s.client.firstName} {s.client.lastName}
+                      </p>
+                      <p className="truncate text-[11px] text-[color:var(--text-tertiary)]">
+                        {s.service?.name ?? "Service TBD"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="default"
+                      className="flex-1"
+                    >
+                      <Link href={`/dashboard/billing/invoices/new?flavor=SERVICES&clientId=${s.client.id}`}>
+                        <CreditCard className="h-3 w-3" aria-hidden /> Collect payment
+                      </Link>
+                    </Button>
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <Link href={`/dashboard/patients/${s.client.id}/packages`}>
+                        <Receipt className="h-3 w-3" aria-hidden /> Proforma of suggestions
+                      </Link>
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
 
         <div className="flex flex-col gap-4">
           <Card className="overflow-hidden p-0">
