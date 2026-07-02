@@ -14,6 +14,7 @@ import { readApiError } from "@/lib/error-messages";
 import {
   type RecommendationItem,
   RecommendationPicker,
+  AdvisoryRecommendationsPicker,
   Section,
   SessionProtocolField,
   type ServiceOption,
@@ -44,6 +45,7 @@ interface ConsultationView {
   recommendedSessions: number | null;
   formData: string | null;
   recommendedServicesJson: string | null;
+  advisoryRecommendations: string | null;
 }
 
 interface Props {
@@ -140,12 +142,25 @@ export function ClinicalShell({
     }
   }, [ownDraft]);
 
+  const initialAdvisoryRecommendations: Record<string, boolean> = useMemo(() => {
+    if (!ownDraft?.advisoryRecommendations) return {};
+    try {
+      const obj = JSON.parse(ownDraft.advisoryRecommendations) as Record<string, unknown>;
+      return typeof obj === "object" && obj ? obj as Record<string, boolean> : {};
+    } catch {
+      return {};
+    }
+  }, [ownDraft]);
+
   const [formData, setFormData] = useState<Record<string, unknown>>(initialFormData);
   const [chiefComplaints, setChiefComplaints] = useState<string>(initialChiefComplaints);
   const [diagnosis, setDiagnosis] = useState<string>(initialDiagnosis);
   const [planOfCare, setPlanOfCare] = useState<string>(ownDraft ? "" : "");
   const [followUp, setFollowUp] = useState<string>("");
   const [recommended, setRecommended] = useState<RecommendationItem[]>(initialRecommended);
+  const [advisoryRecommendations, setAdvisoryRecommendations] = useState<Record<string, boolean>>(
+    initialAdvisoryRecommendations,
+  );
   // Inventory-consumed widget was removed (2026-05-30) — doctor-use inventory
   // is stocked separately from sale stock, so pulling from sale stock on
   // session-save was wrong. Logged usage remains in InventoryLog from prior
@@ -207,6 +222,9 @@ export function ClinicalShell({
           perAmount: r.perAmount,
           gstRate: r.gstRate,
         })),
+        advisoryRecommendations: Object.values(advisoryRecommendations).some((v) => v)
+          ? advisoryRecommendations
+          : undefined,
         status,
       };
 
@@ -322,7 +340,7 @@ export function ClinicalShell({
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     };
-  }, [formData, chiefComplaints, diagnosis, planOfCare, followUp, recommended, viewOnly]);
+  }, [formData, chiefComplaints, diagnosis, planOfCare, followUp, recommended, advisoryRecommendations, viewOnly]);
 
   const saveLabel = pending ? "Saving…" : isLocked ? "Locked" : "Complete & lock";
 
@@ -435,6 +453,18 @@ export function ClinicalShell({
               services={services}
               value={recommended}
               onChange={setRecommended}
+              disabled={disabled}
+            />
+          </Section>
+
+          {/* Advisory recommendations — patient may decline. */}
+          <Section
+            title="Advisory recommendations"
+            description="Patient may decline — advisory only."
+          >
+            <AdvisoryRecommendationsPicker
+              value={advisoryRecommendations}
+              onChange={setAdvisoryRecommendations}
               disabled={disabled}
             />
           </Section>

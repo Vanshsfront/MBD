@@ -567,6 +567,59 @@ export function RecommendationPicker({
   );
 }
 
+// ───────── Advisory Recommendations picker ─────────
+
+const ADVISORY_OPTIONS: ReadonlyArray<{ key: keyof typeof ADVISORY_DEFAULT; label: string }> = [
+  { key: "physiotherapy", label: "Physiotherapy" },
+  { key: "nutrition", label: "Nutrition" },
+  { key: "counselling", label: "Counselling" },
+  { key: "sc", label: "S&C" },
+  { key: "yoga", label: "Yoga" },
+  { key: "massage", label: "Massage" },
+];
+
+const ADVISORY_DEFAULT = {
+  physiotherapy: false,
+  nutrition: false,
+  counselling: false,
+  sc: false,
+  yoga: false,
+  massage: false,
+};
+
+export function AdvisoryRecommendationsPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Record<string, boolean>;
+  onChange: (v: Record<string, boolean>) => void;
+  disabled?: boolean;
+}) {
+  const setBox = (key: string, on: boolean) => {
+    onChange({ ...value, [key]: on });
+  };
+
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {ADVISORY_OPTIONS.map(({ key, label }) => (
+        <label
+          key={key}
+          className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm"
+        >
+          <input
+            type="checkbox"
+            checked={value[key] === true}
+            onChange={(e) => setBox(key, e.target.checked)}
+            disabled={disabled}
+          />
+          {label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
 }

@@ -206,7 +206,20 @@ export default async function ClinicalPage({
     },
     orderBy: { date: "desc" },
     take: 20,
-    include: { consultant: { select: { id: true, name: true } } },
+    select: {
+      id: true,
+      date: true,
+      status: true,
+      consultantId: true,
+      consultant: { select: { id: true, name: true } },
+      templateKey: true,
+      chiefComplaints: true,
+      diagnosis: true,
+      recommendedSessions: true,
+      formData: true,
+      recommendedServicesJson: true,
+      advisoryRecommendations: true,
+    },
   });
 
   // Department services for the recommendation picker.
@@ -351,6 +364,7 @@ export default async function ClinicalPage({
             recommendedSessions: c.recommendedSessions,
             formData: c.formData,
             recommendedServicesJson: c.recommendedServicesJson,
+            advisoryRecommendations: c.advisoryRecommendations,
           }))}
           services={services.map((s) => ({
             id: s.id,

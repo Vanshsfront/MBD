@@ -43,8 +43,16 @@ export default async function PatientOverview({
   // header in the parent layout has its own minimal query — duplication is
   // fine since both share the Prisma connection pool and Next.js dedupes
   // identical queries within a render pass anyway.
-  const [client, paidAggregate, sessionsCount, firstAppt, upcomingAppts, priorConsultations] =
-    await Promise.all([
+  const [
+    client,
+    paidAggregate,
+    sessionsCount,
+    firstAppt,
+    upcomingAppts,
+    priorConsultations,
+    latestConsultation,
+    completedSessionsCount,
+  ] = await Promise.all([
       prisma.client.findUnique({
         where: { id },
         include: {
@@ -99,6 +107,17 @@ export default async function PatientOverview({
           date: true,
           consultant: { select: { name: true } },
         },
+      }),
+      prisma.consultation.findFirst({
+        where: { clientId: id, status: { in: ["COMPLETED", "LOCKED"] } },
+        orderBy: { date: "desc" },
+        select: {
+          advisoryRecommendations: true,
+          recommendedServicesJson: true,
+        },
+      }),
+      prisma.session.count({
+        where: { clientId: id, status: "COMPLETED" },
       }),
     ]);
   if (!client) notFound();
@@ -254,6 +273,70 @@ export default async function PatientOverview({
         {isTherapist ? (
           <TherapistSessionSummary clientId={id} packages={therapistPackageRows} />
         ) : null}
+
+        {completedSessionsCount > 0 || latestConsultation?.advisoryRecommendations
+          ? (() => {
+              let advisoryMarkup = null;
+              if (latestConsultation?.advisoryRecommendations) {
+                try {
+                  const advisory = JSON.parse(latestConsultation.advisoryRecommendations) as Record<
+                    string,
+                    boolean
+                  >;
+                  const selected = Object.entries(advisory)
+                    .filter(([, val]) => val === true)
+                    .map(([key]) => key);
+                  if (selected.length > 0) {
+                    const labels: Record<string, string> = {
+                      physiotherapy: "Physiotherapy",
+                      nutrition: "Nutrition",
+                      counselling: "Counselling",
+                      sc: "S&C",
+                      yoga: "Yoga",
+                      massage: "Massage",
+                    };
+                    advisoryMarkup = (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Advisory recommendations
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selected.map((key) => (
+                            <span
+                              key={key}
+                              className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                            >
+                              {labels[key] || key}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                } catch {
+                  /* ignore parse errors */
+                }
+              }
+              return (
+                <Card>
+                  <div className="p-6">
+                    <h2 className="mb-4 text-base font-semibold">Deliverables & recommendations</h2>
+                    <div className="space-y-4">
+                      {completedSessionsCount > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Sessions completed
+                          </p>
+                          <p className="mt-1 text-2xl font-bold">{completedSessionsCount}</p>
+                        </div>
+                      ) : null}
+                      {advisoryMarkup}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })()
+          : null}
 
         <Card className="overflow-hidden p-0">
           <div className="flex items-center justify-between border-b border-[color:var(--border-light)] px-5 py-4">

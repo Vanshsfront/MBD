@@ -458,6 +458,21 @@ export type RecommendationItem = z.infer<typeof RecommendationItemSchema>;
 
 export const RecommendationsSchema = z.array(RecommendationItemSchema).max(50);
 
+// ───────── Advisory Recommendations (separate from formData; lives on
+//           Consultation.advisoryRecommendations) ─────────
+
+export const AdvisoryRecommendationsSchema = z
+  .object({
+    physiotherapy: z.boolean().default(false),
+    nutrition: z.boolean().default(false),
+    counselling: z.boolean().default(false),
+    sc: z.boolean().default(false),
+    yoga: z.boolean().default(false),
+    massage: z.boolean().default(false),
+  })
+  .partial();
+export type AdvisoryRecommendations = z.infer<typeof AdvisoryRecommendationsSchema>;
+
 // ───────── Type exports per template ─────────
 
 export type PhysiotherapyConsultationData = z.infer<typeof PhysiotherapyConsultationSchema>;

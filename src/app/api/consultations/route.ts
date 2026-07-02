@@ -14,6 +14,7 @@ import { DOCX_TEMPLATES, type DocxTemplateKey } from "@/lib/templates/keys";
 import {
   CLINICAL_SCHEMAS,
   RecommendationsSchema,
+  AdvisoryRecommendationsSchema,
 } from "@/lib/clinical-schemas";
 
 const TEMPLATE_KEYS = Object.keys(DOCX_TEMPLATES) as Array<keyof typeof DOCX_TEMPLATES>;
@@ -30,6 +31,9 @@ const createSchema = z.object({
   // Structured service mix the FO converts into a Package on Phase 5's
   // packages page. JSON-stringified onto Consultation.recommendedServicesJson.
   recommendedServices: RecommendationsSchema.optional(),
+  // Advisory recommendations the therapist marks — patient may decline.
+  // JSON-stringified onto Consultation.advisoryRecommendations.
+  advisoryRecommendations: AdvisoryRecommendationsSchema.optional(),
   followUp: z.string().max(2000).optional(),
   serviceId: z.string().optional(),
   status: z.enum(["DRAFT", "COMPLETED"]).default("DRAFT"),
@@ -119,6 +123,9 @@ export async function POST(req: Request) {
           recommendedServicesJson: f.recommendedServices
             ? JSON.stringify(f.recommendedServices)
             : null,
+          advisoryRecommendations: f.advisoryRecommendations
+            ? JSON.stringify(f.advisoryRecommendations)
+            : null,
           followUp: f.followUp ?? null,
           serviceId: f.serviceId ?? null,
           status: f.status,
@@ -139,6 +146,9 @@ export async function POST(req: Request) {
         recommendedSessions: f.recommendedSessions ?? null,
         recommendedServicesJson: f.recommendedServices
           ? JSON.stringify(f.recommendedServices)
+          : null,
+        advisoryRecommendations: f.advisoryRecommendations
+          ? JSON.stringify(f.advisoryRecommendations)
           : null,
         followUp: f.followUp ?? null,
         serviceId: f.serviceId ?? null,
@@ -239,6 +249,13 @@ export async function PATCH(req: Request) {
           ? {
               recommendedServicesJson: f.recommendedServices.length
                 ? JSON.stringify(f.recommendedServices)
+                : null,
+            }
+          : {}),
+        ...(f.advisoryRecommendations !== undefined
+          ? {
+              advisoryRecommendations: Object.values(f.advisoryRecommendations).some((v) => v)
+                ? JSON.stringify(f.advisoryRecommendations)
                 : null,
             }
           : {}),
