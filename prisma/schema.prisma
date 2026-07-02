@@ -532,6 +532,10 @@ model Session {
   appointmentId String?
   appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
+  // Invoices billed for this session — the FO "After a session" billing queue
+  // links a created invoice here so the session drops off once it's billed.
+  invoices Invoice[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -570,6 +574,11 @@ model Invoice {
 
   packageId String?
   package   Package? @relation(fields: [packageId], references: [id])
+
+  // Optional link to the delivered Session this invoice bills. Set by the FO
+  // "After a session" queue so a billed session drops off the card.
+  sessionId String?
+  session   Session? @relation(fields: [sessionId], references: [id])
 
   centreId String?
   centre   Centre? @relation(fields: [centreId], references: [id])

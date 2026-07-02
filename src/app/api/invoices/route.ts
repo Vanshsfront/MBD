@@ -40,6 +40,7 @@ const createSchema = z
     invoiceType: z.enum(["INVOICE", "PROFORMA"]).default("INVOICE"),
     validTill: z.string().datetime().optional(),
     referredBy: z.string().max(120).optional(),
+    sessionId: z.string().optional(),
     lineItems: z.array(lineSchema).min(1),
     discountPercent: z.number().min(0).max(100).default(0),
     discountType: z.enum(["PERCENT", "FLAT"]).default("PERCENT"),
@@ -234,6 +235,7 @@ export async function POST(req: Request) {
         promotionCode: promo?.code ?? null,
         promotionDiscount: totals.promotionDiscount,
         status: f.invoiceType === "PROFORMA" ? "DRAFT" : "SENT",
+        sessionId: f.sessionId ?? null,
         lineItems: JSON.stringify(
           f.lineItems.map((l) => ({
             ...l,

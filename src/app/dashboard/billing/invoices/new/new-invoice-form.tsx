@@ -75,6 +75,8 @@ interface Props {
   staff: StaffOption[];
   promotions: PromoOption[];
   initialFlavor?: Flavor;
+  initialSessionId?: string;
+  initialServiceId?: string;
 }
 
 type Flavor = "SERVICES" | "PRODUCTS" | "MANUAL" | "PROFORMA";
@@ -102,7 +104,7 @@ function blankLine(): LineItem {
   return { qty: 1, perAmount: 0, gstRate: 0 };
 }
 
-export function NewInvoiceForm({ clients, services, products, staff, promotions, initialFlavor = "SERVICES" }: Props) {
+export function NewInvoiceForm({ clients, services, products, staff, promotions, initialFlavor = "SERVICES", initialSessionId, initialServiceId }: Props) {
   const router = useRouter();
   const [flavor, setFlavor] = useState<Flavor>(initialFlavor);
   const [clientId, setClientId] = useState<string>("");
@@ -110,6 +112,7 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
   const [validTill, setValidTill] = useState<string>(""); // PROFORMA only
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [promoCode, setPromoCode] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string | undefined>(initialSessionId);
   const [lines, setLines] = useState<LineItem[]>([blankLine()]);
   const [pending, setPending] = useState(false);
 
@@ -139,6 +142,23 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
       cancelled = true;
     };
   }, [clientId]);
+
+  // Pre-fill service if initialServiceId is provided.
+  useEffect(() => {
+    if (!initialServiceId || flavor === "PRODUCTS" || flavor === "MANUAL") return;
+    const svc = services.find((s) => s.id === initialServiceId);
+    if (!svc) return;
+    const line: LineItem = {
+      serviceId: svc.id,
+      service: svc.name,
+      hsnSac: svc.hsnSac,
+      perAmount: svc.basePrice,
+      gstRate: svc.gstRate,
+      qty: svc.participantCount,
+      qtyLocked: svc.participantCount > 1 ? svc.participantCount : undefined,
+    };
+    setLines((prev) => (prev.length === 1 && isLineEmpty(prev[0]) ? [line] : prev));
+  }, [initialServiceId, services, flavor]);
 
   // Reset lines when flavor changes — fields differ.
   function switchFlavor(next: Flavor) {
@@ -321,6 +341,7 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
               ? new Date(validTill).toISOString()
               : undefined,
           referredBy: referredBy || undefined,
+          sessionId: sessionId || undefined,
           discountPercent,
           discountType: "PERCENT",
           promotionCode: promoCode || undefined,

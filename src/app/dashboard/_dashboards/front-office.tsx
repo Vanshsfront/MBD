@@ -88,10 +88,13 @@ export async function FrontOfficeDashboard({
         ...centreFilter,
         status: "COMPLETED",
         sessionDate: { gte: startOfDay, lt: endOfDay },
+        packageId: null,
+        invoices: { none: {} },
       },
       orderBy: { sessionDate: "desc" },
       select: {
         id: true,
+        serviceId: true,
         sessionDate: true,
         client: { select: { firstName: true, lastName: true, id: true } },
         therapist: { select: { name: true } },
@@ -380,7 +383,7 @@ export async function FrontOfficeDashboard({
                       variant="default"
                       className="flex-1"
                     >
-                      <Link href={`/dashboard/billing/invoices/new?flavor=SERVICES&clientId=${s.client.id}`}>
+                      <Link href={`/dashboard/billing/invoices/new?flavor=SERVICES&clientId=${s.client.id}&sessionId=${s.id}${s.serviceId ? `&serviceId=${s.serviceId}` : ""}`}>
                         <CreditCard className="h-3 w-3" aria-hidden /> Collect payment
                       </Link>
                     </Button>
