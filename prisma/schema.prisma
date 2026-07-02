@@ -94,6 +94,7 @@ model Service {
   isActive         Boolean @default(true)
   participantCount Int     @default(1) // 1=individual, 2=duo, 3=trio
   serviceType      String  @default("CLINIC") // CLINIC | GYM | ONLINE | HOME_VISIT — drives MIS Type column
+  durationMin      Int? // info-only typical duration (min) shown to FO; not billed
 
   departmentId String
   department   Department @relation(fields: [departmentId], references: [id])
@@ -318,6 +319,11 @@ model IntakeForm {
   signatureDataUrl               String? // patient signature (digital pad)
   consentMethod                  String? // PHYSICAL_SCAN | DIGITAL_PAD
 
+  // Minor (age < 18) parental/guardian consent capture.
+  guardianConsent      Boolean @default(false)
+  guardianName         String?
+  guardianRelationship String?
+
   frontOfficeExecId String?
 
   clientId String
@@ -364,6 +370,15 @@ model Consultation {
   // Therapist-staged service mix that FO converts into a Package + Invoice.
   // JSON: [{ serviceId, serviceName, count, perAmount, gstRate }]
   recommendedServicesJson String?
+
+  // Advisory-only referral flags the therapist marks (e.g. physiotherapy
+  // required, nutrition recommended). FO can view these; patients may decline.
+  // Distinct from recommendedServicesJson (which drives billing).
+  // JSON: { physiotherapy?: bool, nutrition?: bool, counselling?: bool, ... }
+  advisoryRecommendations String?
+
+  // Info-only consultation duration in minutes (display/scheduling; not billed).
+  durationMin Int?
 
   formData String? // JSON, schema validated by templateKey
 
@@ -589,7 +604,7 @@ model Payment {
   // Reference: audit-2026-06-06.md F-008.
   idempotencyKey String? @unique
 
-  createdAt    DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 // ─── APPOINTMENT ─────────────────────────────────────
@@ -633,7 +648,7 @@ model Appointment {
   package   Package? @relation(fields: [packageId], references: [id])
 
   // Live-timer sessions fulfilling this appointment (reverse of Session.appointmentId).
-  sessions  Session[]
+  sessions Session[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -782,13 +797,13 @@ model ClientFlag {
 // Reference: audit-2026-06-06 BUNDLE-005 / F-009.
 model RumEvent {
   id             String   @id @default(cuid())
-  metric         String   // LCP | CLS | INP | FCP | TTFB
-  value          Float    // metric value in the unit the spec defines (ms or unitless for CLS)
-  rating         String?  // good | needs-improvement | poor (from the lib's threshold)
-  page           String   // URL path only (no query/fragment)
-  navigationType String?  // navigate | reload | back-forward | prerender
-  userAgentHash  String?  // hashed; never raw UA (PII minimisation)
-  sessionIdHash  String?  // hashed per-tab session id (volatile)
+  metric         String // LCP | CLS | INP | FCP | TTFB
+  value          Float // metric value in the unit the spec defines (ms or unitless for CLS)
+  rating         String? // good | needs-improvement | poor (from the lib's threshold)
+  page           String // URL path only (no query/fragment)
+  navigationType String? // navigate | reload | back-forward | prerender
+  userAgentHash  String? // hashed; never raw UA (PII minimisation)
+  sessionIdHash  String? // hashed per-tab session id (volatile)
   createdAt      DateTime @default(now())
 
   @@index([metric, createdAt])
