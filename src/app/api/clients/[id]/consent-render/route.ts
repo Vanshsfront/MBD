@@ -72,6 +72,31 @@ export async function GET(
     .filter((n): n is string => !!n);
   const fullAddress = [address.line1, address.city, address.pincode].filter(Boolean).join(", ");
 
+  const patientSignatureDataUrl = intake?.signatureDataUrl ?? "";
+  const foSignatureDataUrl = foSignature?.signatureDataUrl ?? "";
+
+  // Validate patient signature: must be a non-empty data URL.
+  // This is a guard against rendering consent with invisible signatures due to
+  // missing signature data (the image module silently falls back to 1x1 transparent PNG).
+  const isValidDataUrl = (value: string): boolean =>
+    typeof value === "string" && value.startsWith("data:image/") && value.length > 16;
+
+  if (!isValidDataUrl(patientSignatureDataUrl)) {
+    return NextResponse.json(
+      { error: "patient_signature_missing" },
+      { status: 422 },
+    );
+  }
+
+  // Warn if FO signature is missing, but still render.
+  // FO staff signatures are optional at the time of consent rendering; not all staff
+  // may have signatures on file yet. This is a data-quality issue, not a blocker.
+  if (!isValidDataUrl(foSignatureDataUrl)) {
+    console.warn(
+      `[consent-render] FO signature missing for staff ${auth.user.id} when rendering consent for client ${id}`,
+    );
+  }
+
   const data = {
     visitDate: formatDate(intake?.createdAt ?? client.createdAt),
     visitTime: formatTime(intake?.createdAt ?? client.createdAt),
@@ -95,12 +120,12 @@ export async function GET(
     assignedTo: assignedNames.join(", "),
     assignedBy: auth.user.name ?? auth.user.email ?? "",
     // Image-module placeholders ({{%patientSignature}} / {{%frontOffice.signature}}).
-    // Both fall back to a 1x1 transparent PNG when the data URL is empty —
-    // the renderer never crashes for un-signed templates.
-    patientSignature: intake?.signatureDataUrl ?? "",
+    // Patient signature is validated above (will not reach here if missing).
+    // FO signature may be empty; the renderer falls back to 1x1 transparent PNG.
+    patientSignature: patientSignatureDataUrl,
     frontOffice: {
       name: auth.user.name ?? "",
-      signature: foSignature?.signatureDataUrl ?? "",
+      signature: foSignatureDataUrl,
     },
   };
 
