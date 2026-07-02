@@ -77,6 +77,7 @@ interface Props {
   initialFlavor?: Flavor;
   initialSessionId?: string;
   initialServiceId?: string;
+  initialClientId?: string;
 }
 
 type Flavor = "SERVICES" | "PRODUCTS" | "MANUAL" | "PROFORMA";
@@ -104,10 +105,10 @@ function blankLine(): LineItem {
   return { qty: 1, perAmount: 0, gstRate: 0 };
 }
 
-export function NewInvoiceForm({ clients, services, products, staff, promotions, initialFlavor = "SERVICES", initialSessionId, initialServiceId }: Props) {
+export function NewInvoiceForm({ clients, services, products, staff, promotions, initialFlavor = "SERVICES", initialSessionId, initialServiceId, initialClientId }: Props) {
   const router = useRouter();
   const [flavor, setFlavor] = useState<Flavor>(initialFlavor);
-  const [clientId, setClientId] = useState<string>("");
+  const [clientId, setClientId] = useState<string>(initialClientId ?? "");
   const [referredBy, setReferredBy] = useState<string>("");
   const [validTill, setValidTill] = useState<string>(""); // PROFORMA only
   const [discountPercent, setDiscountPercent] = useState<number>(0);

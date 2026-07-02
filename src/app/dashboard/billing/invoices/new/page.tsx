@@ -13,7 +13,7 @@ export const metadata = { title: "New invoice — MBD Clinic OS" };
 export default async function NewInvoicePage({
   searchParams,
 }: {
-  searchParams: Promise<{ flavor?: string; sessionId?: string; serviceId?: string }>;
+  searchParams: Promise<{ flavor?: string; sessionId?: string; serviceId?: string; clientId?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -102,6 +102,7 @@ export default async function NewInvoicePage({
         }
         initialSessionId={params.sessionId}
         initialServiceId={params.serviceId}
+        initialClientId={params.clientId}
         clients={clients.map((c) => ({
           id: c.id,
           label: `${c.firstName} ${c.lastName} (${c.clientCode})`,
