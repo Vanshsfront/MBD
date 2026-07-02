@@ -58,6 +58,7 @@ export default async function InvoiceListPage({
         id: true,
         invoiceNumber: true,
         invoiceFlavor: true,
+        invoiceType: true,
         status: true,
         totalAmount: true,
         paidAmount: true,
@@ -193,7 +194,7 @@ export default async function InvoiceListPage({
                       </td>
                       <td className="num tabular">{due > 0 ? formatINR(due) : "—"}</td>
                       <td>
-                        <StatusChip status={inv.status as InvoiceStatus} />
+                        <StatusChip status={inv.status as InvoiceStatus} invoiceType={inv.invoiceType} />
                       </td>
                       <td className="num">
                         <Link
@@ -216,7 +217,10 @@ export default async function InvoiceListPage({
   );
 }
 
-function StatusChip({ status }: { status: InvoiceStatus }) {
+function StatusChip({ status, invoiceType }: { status: InvoiceStatus; invoiceType?: string | null }) {
+  if (invoiceType === "PROFORMA") {
+    return <span className="chip chip-warning">PROFORMA (Estimate)</span>;
+  }
   switch (status) {
     case "PAID":
       return <span className="chip chip-success">Paid</span>;

@@ -10,12 +10,18 @@ import { NewInvoiceForm } from "./new-invoice-form";
 
 export const metadata = { title: "New invoice — MBD Clinic OS" };
 
-export default async function NewInvoicePage() {
+export default async function NewInvoicePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ flavor?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!hasPermission(session.user.role, "billing:create_edit_invoice")) {
     redirect("/dashboard");
   }
+
+  const params = await searchParams;
 
   const centreId = (await activeCentreId()) ?? session.user.centreId ?? null;
   if (!centreId) redirect("/dashboard");
@@ -84,6 +90,15 @@ export default async function NewInvoicePage() {
         </p>
       </header>
       <NewInvoiceForm
+        initialFlavor={
+          params.flavor === "PROFORMA"
+            ? "PROFORMA"
+            : params.flavor === "PRODUCTS"
+              ? "PRODUCTS"
+              : params.flavor === "MANUAL"
+                ? "MANUAL"
+                : "SERVICES"
+        }
         clients={clients.map((c) => ({
           id: c.id,
           label: `${c.firstName} ${c.lastName} (${c.clientCode})`,

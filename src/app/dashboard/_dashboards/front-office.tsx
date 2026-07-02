@@ -408,19 +408,37 @@ export async function FrontOfficeDashboard({
 
           <Card>
             <div className="p-6">
-              <h2 className="mb-3 text-base font-semibold">Quick actions</h2>
-              <div className="grid grid-cols-2 gap-2">
-                <QuickAction href="/dashboard/intake" icon={<QrCode className="h-4 w-4" />} label="Intake QR" />
-                <QuickAction
-                  href="/dashboard/calendar"
-                  icon={<CalendarIcon className="h-4 w-4" />}
-                  label="Calendar"
-                />
-                <QuickAction
-                  href="/dashboard/billing/invoices/new"
-                  icon={<Receipt className="h-4 w-4" />}
-                  label="New invoice"
-                />
+              <h2 className="mb-4 text-base font-semibold">Quick actions</h2>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <QuickAction href="/dashboard/intake" icon={<QrCode className="h-4 w-4" />} label="Intake QR" />
+                  <QuickAction
+                    href="/dashboard/calendar"
+                    icon={<CalendarIcon className="h-4 w-4" />}
+                    label="Calendar"
+                  />
+                </div>
+                <div className="border-t border-[color:var(--border-light)] pt-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">Billing</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <QuickAction
+                        href="/dashboard/billing/invoices/new?flavor=SERVICES"
+                        icon={<Receipt className="h-4 w-4" />}
+                        label="Collect payment"
+                      />
+                      <p className="text-[10px] text-muted-foreground px-1">Today's session</p>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <QuickAction
+                        href="/dashboard/billing/invoices/new?flavor=PROFORMA"
+                        icon={<Receipt className="h-4 w-4" />}
+                        label="Create proforma"
+                      />
+                      <p className="text-[10px] text-muted-foreground px-1">Suggestions only</p>
+                    </div>
+                  </div>
+                </div>
                 <QuickAction
                   href="/dashboard/billing/payments"
                   icon={<CreditCard className="h-4 w-4" />}

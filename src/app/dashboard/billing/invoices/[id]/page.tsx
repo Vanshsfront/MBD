@@ -67,19 +67,25 @@ export default async function InvoiceDetailPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            variant={
-              invoice.status === "PAID"
-                ? "success"
-                : invoice.status === "OVERDUE"
-                  ? "danger"
-                  : invoice.status === "PARTIAL"
-                    ? "warning"
-                    : "info"
-            }
-          >
-            {invoice.status}
-          </Badge>
+          {invoice.invoiceType === "PROFORMA" ? (
+            <Badge variant="warning">
+              PROFORMA (Estimate)
+            </Badge>
+          ) : (
+            <Badge
+              variant={
+                invoice.status === "PAID"
+                  ? "success"
+                  : invoice.status === "OVERDUE"
+                    ? "danger"
+                    : invoice.status === "PARTIAL"
+                      ? "warning"
+                      : "info"
+              }
+            >
+              {invoice.status}
+            </Badge>
+          )}
           {invoice.invoiceType === "PROFORMA" && (
             <SharePortalButton clientId={invoice.clientId} />
           )}

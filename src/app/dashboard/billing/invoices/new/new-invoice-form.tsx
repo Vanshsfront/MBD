@@ -73,6 +73,7 @@ interface Props {
   products: ProductOption[];
   staff: StaffOption[];
   promotions: PromoOption[];
+  initialFlavor?: Flavor;
 }
 
 type Flavor = "SERVICES" | "PRODUCTS" | "MANUAL" | "PROFORMA";
@@ -100,9 +101,9 @@ function blankLine(): LineItem {
   return { qty: 1, perAmount: 0, gstRate: 0 };
 }
 
-export function NewInvoiceForm({ clients, services, products, staff, promotions }: Props) {
+export function NewInvoiceForm({ clients, services, products, staff, promotions, initialFlavor = "SERVICES" }: Props) {
   const router = useRouter();
-  const [flavor, setFlavor] = useState<Flavor>("SERVICES");
+  const [flavor, setFlavor] = useState<Flavor>(initialFlavor);
   const [clientId, setClientId] = useState<string>("");
   const [referredBy, setReferredBy] = useState<string>("");
   const [validTill, setValidTill] = useState<string>(""); // PROFORMA only
@@ -381,6 +382,18 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions 
               </button>
             ))}
           </div>
+
+          {/* PROFORMA callout */}
+          {flavor === "PROFORMA" ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-medium text-amber-900">
+                Proforma = Estimate for the patient to review
+              </p>
+              <p className="text-xs text-amber-800 mt-1">
+                It is NOT a bill and is not counted as revenue.
+              </p>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
