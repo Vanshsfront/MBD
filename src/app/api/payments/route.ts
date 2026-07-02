@@ -66,6 +66,8 @@ export async function POST(req: Request) {
   if (scope) return scope;
   if (invoice.status === "CANCELLED")
     return NextResponse.json({ error: "invoice_cancelled" }, { status: 400 });
+  if (invoice.invoiceType === "PROFORMA")
+    return NextResponse.json({ error: "cannot_pay_proforma" }, { status: 400 });
 
   // Block overpayment. Tolerance is 1 paisa for float rounding — anything
   // beyond is rejected so the FO has to either reduce the amount or recognise

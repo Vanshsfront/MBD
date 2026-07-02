@@ -63,6 +63,7 @@ export default async function MisReportPage({
       ...(centreId ? { centreId } : {}),
       invoiceDate: { gte: from, lte: to },
       ...(typeFilter ? { type: typeFilter } : {}),
+      invoiceType: "INVOICE",
     },
     orderBy: { invoiceDate: "desc" },
     take: 500,

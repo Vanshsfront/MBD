@@ -60,6 +60,7 @@ export async function GET(req: Request) {
       ...(centreId ? { centreId } : {}),
       invoiceDate: { gte: from, lte: to },
       ...(typeFilter && typeFilter !== "all" ? { type: typeFilter } : {}),
+      invoiceType: "INVOICE",
     },
     orderBy: { invoiceDate: "asc" },
   });

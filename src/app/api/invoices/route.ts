@@ -179,7 +179,7 @@ export async function POST(req: Request) {
 
   // patientType: "New" if first invoice for this client in this centre.
   const priorInvoiceCount = await prisma.invoice.count({
-    where: { clientId: f.clientId, centreId: client.centre.id },
+    where: { clientId: f.clientId, centreId: client.centre.id, invoiceType: "INVOICE" },
   });
   const resolvedPatientType = priorInvoiceCount === 0 ? "New" : "Existing";
 
@@ -292,6 +292,7 @@ export async function POST(req: Request) {
           sessionNo: 1,
           paidAmount: 0,
           balanceAmount: misRound2(lineAfterAll + gst),
+          invoiceType: invoice.invoiceType,
         },
       });
     }

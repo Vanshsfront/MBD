@@ -52,6 +52,7 @@ export default async function SourcesReport({
           ...(centreId ? { centreId } : {}),
           clientId: { in: clientIds },
           invoiceDate: { gte: from, lte: to },
+          invoiceType: "INVOICE",
         },
         _sum: { netPayableAmount: true, paidAmount: true, balanceAmount: true },
       });

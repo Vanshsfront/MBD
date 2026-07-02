@@ -74,29 +74,30 @@ export async function OwnerDashboard({
     activeClinicalStaffCount,
   ] = await Promise.all([
     prisma.misEntry.aggregate({
-      where: { ...centreFilter, invoiceDate: { gte: startOfDay, lt: endOfDay } },
+      where: { ...centreFilter, invoiceDate: { gte: startOfDay, lt: endOfDay }, invoiceType: "INVOICE" },
       _sum: { netPayableAmount: true },
     }),
     prisma.misEntry.aggregate({
-      where: { ...centreFilter, invoiceDate: { gte: startOfYesterday, lt: startOfDay } },
+      where: { ...centreFilter, invoiceDate: { gte: startOfYesterday, lt: startOfDay }, invoiceType: "INVOICE" },
       _sum: { netPayableAmount: true },
     }),
     prisma.misEntry.aggregate({
-      where: { ...centreFilter, invoiceDate: { gte: startOfWeek } },
+      where: { ...centreFilter, invoiceDate: { gte: startOfWeek }, invoiceType: "INVOICE" },
       _sum: { netPayableAmount: true },
     }),
     prisma.misEntry.aggregate({
-      where: { ...centreFilter, invoiceDate: { gte: startOfPriorWeek, lt: startOfWeek } },
+      where: { ...centreFilter, invoiceDate: { gte: startOfPriorWeek, lt: startOfWeek }, invoiceType: "INVOICE" },
       _sum: { netPayableAmount: true },
     }),
     prisma.misEntry.aggregate({
-      where: { ...centreFilter, invoiceDate: { gte: startOfMonth } },
+      where: { ...centreFilter, invoiceDate: { gte: startOfMonth }, invoiceType: "INVOICE" },
       _sum: { netPayableAmount: true },
     }),
     prisma.misEntry.aggregate({
       where: {
         ...centreFilter,
         invoiceDate: { gte: startOfPriorMonth, lte: priorMonthSameDay },
+        invoiceType: "INVOICE",
       },
       _sum: { netPayableAmount: true },
     }),
