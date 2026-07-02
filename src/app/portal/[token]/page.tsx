@@ -1,5 +1,5 @@
 // Public patient portal — no login. The token in the URL is the auth.
-// Renders package balance + next appointment + invoice statuses.
+// Renders package balance + next appointment + invoice statuses + proformas.
 // PRD §8 + Phase 8.
 
 import { headers } from "next/headers";
@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
+import { ProformaSection } from "./proforma-section";
 
 export const metadata = {
   title: "Your portal — Movement By Design",
@@ -202,6 +203,8 @@ export default async function ClientPortalPage({
           </CardContent>
         </Card>
 
+        {data.proformas.length > 0 && <ProformaSection proformas={data.proformas} token={token} />}
+
         <p className="text-center text-[11px] text-muted-foreground">
           Read-only view. Need a change? Call the front office.
         </p>
@@ -251,5 +254,18 @@ interface PortalPayload {
     outstanding: number;
     createdAt: string;
     dueDate: string | null;
+  }>;
+  proformas: Array<{
+    id: string;
+    invoiceNumber: string;
+    validTill: string | null;
+    totalAmount: number;
+    lineItems: Array<{
+      name: string;
+      qty: number;
+      perAmount: number;
+      gstRate: number;
+      lineTotal: number;
+    }>;
   }>;
 }

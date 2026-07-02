@@ -43,7 +43,7 @@ export async function GET(
   // Pull just enough for the public view. PHI minimisation — no clinical
   // notes, no consultation forms, no audit trail.
   const now = new Date();
-  const [packages, nextAppointment, invoices] = await Promise.all([
+  const [packages, nextAppointment, invoices, proformas] = await Promise.all([
     prisma.package.findMany({
       where: { clientId: row.clientId, status: "ACTIVE" },
       orderBy: { validUntil: "asc" },
@@ -84,6 +84,21 @@ export async function GET(
         paidAmount: true,
         createdAt: true,
         dueDate: true,
+      },
+    }),
+    prisma.invoice.findMany({
+      where: {
+        clientId: row.clientId,
+        invoiceType: "PROFORMA",
+        status: { not: "CANCELLED" },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        validTill: true,
+        totalAmount: true,
+        lineItems: true,
       },
     }),
   ]);
@@ -131,5 +146,39 @@ export async function GET(
       createdAt: inv.createdAt.toISOString(),
       dueDate: inv.dueDate?.toISOString() ?? null,
     })),
+    proformas: proformas.map((pf) => {
+      const lineItems = parseLineItems(pf.lineItems);
+      return {
+        id: pf.id,
+        invoiceNumber: pf.invoiceNumber,
+        validTill: pf.validTill?.toISOString() ?? null,
+        totalAmount: pf.totalAmount,
+        lineItems: lineItems.map((li) => ({
+          name: li.service ?? li.product ?? "Service",
+          qty: li.qty,
+          perAmount: li.perAmount,
+          gstRate: li.gstRate ?? 0,
+          lineTotal: li.lineTotal ?? li.qty * li.perAmount,
+        })),
+      };
+    }),
   });
+}
+
+function parseLineItems(
+  json: string,
+): Array<{
+  service?: string;
+  product?: string;
+  qty: number;
+  perAmount: number;
+  gstRate?: number;
+  lineTotal?: number;
+}> {
+  try {
+    const out = JSON.parse(json);
+    return Array.isArray(out) ? out : [];
+  } catch {
+    return [];
+  }
 }

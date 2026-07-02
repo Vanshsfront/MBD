@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
 import { RecordPaymentForm } from "./record-payment-form";
+import { SharePortalButton } from "@/app/dashboard/patients/[id]/share-portal-button";
 
 export const metadata = { title: "Invoice — MBD Clinic OS" };
 
@@ -65,7 +66,7 @@ export default async function InvoiceDetailPage({
             · {invoice.invoiceFlavor} · {new Date(invoice.createdAt).toLocaleString("en-IN")}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge
             variant={
               invoice.status === "PAID"
@@ -79,6 +80,9 @@ export default async function InvoiceDetailPage({
           >
             {invoice.status}
           </Badge>
+          {invoice.invoiceType === "PROFORMA" && (
+            <SharePortalButton clientId={invoice.clientId} />
+          )}
           <a
             href={`/api/invoices/${invoice.id}/render`}
             className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
