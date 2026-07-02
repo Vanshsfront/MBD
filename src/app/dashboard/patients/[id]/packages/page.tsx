@@ -25,6 +25,15 @@ export default async function PackagesPage({
 
   const canEdit = hasPermission(session.user.role, "billing:edit_packages");
 
+  // Pending suggestions at the top (therapist proposes, FO accepts/dismisses).
+  const pendingSuggestions = canEdit
+    ? await prisma.packageSuggestion.findMany({
+        where: { clientId: id, status: "PENDING" },
+        orderBy: { createdAt: "desc" },
+        include: { suggestedByStaff: { select: { name: true } } },
+      })
+    : [];
+
   const packages = await prisma.package.findMany({
     where: { clientId: id },
     orderBy: { createdAt: "desc" },
@@ -68,6 +77,7 @@ export default async function PackagesPage({
       name: true,
       basePrice: true,
       participantCount: true,
+      durationMin: true,
       department: { select: { name: true } },
     },
   });
@@ -82,6 +92,12 @@ export default async function PackagesPage({
     <PackagesView
       clientId={id}
       canEdit={canEdit}
+      pendingSuggestions={pendingSuggestions.map((s) => ({
+        id: s.id,
+        note: s.note,
+        suggestedByName: s.suggestedByStaff?.name ?? "—",
+        createdAt: s.createdAt.toISOString(),
+      }))}
       packages={packages.map((p) => ({
         id: p.id,
         totalSessions: p.totalSessions,
@@ -124,6 +140,7 @@ export default async function PackagesPage({
         name: s.name,
         basePrice: s.basePrice,
         participantCount: s.participantCount,
+        durationMin: s.durationMin,
         department: s.department?.name ?? null,
       }))}
       promotions={promotions.map((p) => ({

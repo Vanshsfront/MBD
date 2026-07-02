@@ -36,6 +36,7 @@ export default async function ServicesAdminPage() {
         gstRate: s.gstRate,
         isActive: s.isActive,
         participantCount: s.participantCount,
+        durationMin: s.durationMin,
       }))}
     />
   );

@@ -60,6 +60,7 @@ interface ServiceOption {
   name: string;
   basePrice: number;
   participantCount: number;
+  durationMin: number | null;
   department: string | null;
 }
 
@@ -73,9 +74,17 @@ interface MixItem {
   count: number;
 }
 
+interface PendingSuggestion {
+  id: string;
+  note: string;
+  suggestedByName: string;
+  createdAt: string;
+}
+
 interface Props {
   clientId: string;
   canEdit: boolean;
+  pendingSuggestions: PendingSuggestion[];
   packages: PackageRow[];
   consultations: ConsultationRow[];
   services: ServiceOption[];
@@ -85,6 +94,7 @@ interface Props {
 export function PackagesView({
   clientId,
   canEdit,
+  pendingSuggestions,
   packages,
   consultations,
   services,
@@ -201,6 +211,26 @@ export function PackagesView({
 
   return (
     <div className="space-y-4">
+      {canEdit && pendingSuggestions.length > 0 ? (
+        <div className="space-y-3">
+          <h2 className="text-base font-semibold">Pending suggestions ({pendingSuggestions.length})</h2>
+          {pendingSuggestions.map((s) => (
+            <Card key={s.id} className="border-amber-200 bg-amber-50/50">
+              <CardContent className="pt-6">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Suggested by <span className="font-medium">{s.suggestedByName}</span>
+                  </p>
+                  <p className="text-sm whitespace-pre-wrap">{s.note}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {new Date(s.createdAt).toLocaleDateString("en-IN")}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : null}
       {canEdit ? (
         <Card>
           <CardHeader>
@@ -253,6 +283,7 @@ export function PackagesView({
                   {services.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.name} {s.department ? `· ${s.department}` : ""} · {formatINR(s.basePrice)}
+                      {s.durationMin ? ` · ${s.durationMin} min` : ""}
                       {s.participantCount > 1 ? ` (qty ×${s.participantCount})` : ""}
                     </SelectItem>
                   ))}
@@ -277,6 +308,7 @@ export function PackagesView({
                           {formatINR(svc.basePrice)} ×
                           {svc.participantCount > 1 ? ` ${svc.participantCount}` : " 1"}
                           /session
+                          {svc.durationMin ? ` · ${svc.durationMin} min` : ""}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

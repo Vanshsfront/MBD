@@ -12,6 +12,7 @@ const updateSchema = z.object({
   // service costs more, lift this. gstRate stays in fraction form (0..1).
   basePrice: z.number().min(0).max(1_000_000).optional(),
   gstRate: z.number().min(0).max(1).optional(),
+  durationMin: z.number().int().min(0).max(480).optional(), // 0–8 hours (info-only)
   isActive: z.boolean().optional(),
 });
 
@@ -36,13 +37,14 @@ export async function PATCH(req: Request) {
     data: {
       ...(f.basePrice !== undefined ? { basePrice: f.basePrice } : {}),
       ...(f.gstRate !== undefined ? { gstRate: f.gstRate } : {}),
+      ...(f.durationMin !== undefined ? { durationMin: f.durationMin } : {}),
       ...(f.isActive !== undefined ? { isActive: f.isActive } : {}),
     },
   });
 
   const changes = computeChanges(
-    { basePrice: existing.basePrice, gstRate: existing.gstRate, isActive: existing.isActive },
-    { basePrice: updated.basePrice, gstRate: updated.gstRate, isActive: updated.isActive },
+    { basePrice: existing.basePrice, gstRate: existing.gstRate, durationMin: existing.durationMin, isActive: existing.isActive },
+    { basePrice: updated.basePrice, gstRate: updated.gstRate, durationMin: updated.durationMin, isActive: updated.isActive },
   );
 
   const meta = requestMeta(req);

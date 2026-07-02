@@ -19,6 +19,7 @@ interface ServiceRow {
   gstRate: number;
   isActive: boolean;
   participantCount: number;
+  durationMin: number | null;
 }
 
 export function ServicesAdminView({
@@ -32,6 +33,7 @@ export function ServicesAdminView({
   const [editing, setEditing] = useState<string | null>(null);
   const [editPrice, setEditPrice] = useState("");
   const [editGst, setEditGst] = useState("");
+  const [editDurationMin, setEditDurationMin] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [importPending, setImportPending] = useState(false);
   const [search, setSearch] = useState("");
@@ -81,6 +83,7 @@ export function ServicesAdminView({
     setEditing(s.id);
     setEditPrice(String(s.basePrice));
     setEditGst(String(s.gstRate));
+    setEditDurationMin(s.durationMin ? String(s.durationMin) : "");
   }
 
   async function save(id: string) {
@@ -93,6 +96,7 @@ export function ServicesAdminView({
           id,
           basePrice: Number(editPrice),
           gstRate: Number(editGst),
+          ...(editDurationMin ? { durationMin: Number(editDurationMin) } : {}),
         }),
       });
       if (!res.ok) {
@@ -199,6 +203,7 @@ export function ServicesAdminView({
                     <th className="px-3 py-2 text-left">HSN/SAC</th>
                     <th className="px-3 py-2 text-right">Price</th>
                     <th className="px-3 py-2 text-right">GST</th>
+                    <th className="px-3 py-2 text-right">Duration</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2"></th>
                   </tr>
@@ -238,6 +243,19 @@ export function ServicesAdminView({
                           />
                         ) : (
                           `${(s.gstRate * 100).toFixed(0)}%`
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {editing === s.id ? (
+                          <Input
+                            type="number"
+                            value={editDurationMin}
+                            onChange={(e) => setEditDurationMin(e.target.value)}
+                            placeholder="—"
+                            className="w-20 text-right"
+                          />
+                        ) : (
+                          s.durationMin ? `${s.durationMin} min` : "—"
                         )}
                       </td>
                       <td className="px-3 py-2">

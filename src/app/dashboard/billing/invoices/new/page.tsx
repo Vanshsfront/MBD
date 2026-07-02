@@ -46,6 +46,7 @@ export default async function NewInvoicePage({
         gstRate: true,
         hsnSacCode: true,
         participantCount: true,
+        durationMin: true,
         department: { select: { name: true } },
       },
     }),
@@ -111,6 +112,7 @@ export default async function NewInvoicePage({
           gstRate: s.gstRate,
           hsnSac: s.hsnSacCode ?? "",
           participantCount: s.participantCount,
+          durationMin: s.durationMin,
           department: s.department?.name ?? null,
         }))}
         products={inventoryItems.map((it) => ({

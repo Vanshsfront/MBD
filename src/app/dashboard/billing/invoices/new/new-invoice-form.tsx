@@ -42,6 +42,7 @@ interface ServiceOption {
   gstRate: number;
   hsnSac: string;
   participantCount: number;
+  durationMin: number | null;
   department: string | null;
 }
 interface ProductOption {
@@ -512,6 +513,7 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
                               <SelectItem key={s.id} value={s.id}>
                                 {s.name}
                                 {s.department ? ` · ${s.department}` : ""} · ₹{s.basePrice}
+                                {s.durationMin ? ` · ${s.durationMin} min` : ""}
                                 {s.participantCount > 1 ? ` · qty=${s.participantCount}` : ""}
                               </SelectItem>
                             ))}
@@ -828,7 +830,10 @@ function ServicePickRow({ svc, onAdd }: { svc: ServiceOption; onAdd: () => void 
         {svc.name}
         {svc.participantCount > 1 ? <span className="ml-1 text-[10px] text-muted-foreground">·{svc.participantCount === 2 ? "Duo" : "Trio"}</span> : null}
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground">{formatINR(svc.basePrice)}</span>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {formatINR(svc.basePrice)}
+        {svc.durationMin ? ` · ${svc.durationMin} min` : ""}
+      </span>
       <span className="shrink-0 text-xs font-medium text-primary">+ Add</span>
     </button>
   );

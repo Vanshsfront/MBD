@@ -84,6 +84,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       gstRate: true,
       hsnSacCode: true,
       participantCount: true,
+      durationMin: true,
       department: { select: { name: true } },
     },
   });
@@ -100,6 +101,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       gstRate: r.gstRate,
       hsnSac: r.hsnSacCode ?? "",
       participantCount: r.participantCount,
+      durationMin: r.durationMin,
       department: r.department?.name ?? null,
     }));
 
