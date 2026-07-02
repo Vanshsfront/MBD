@@ -12,6 +12,9 @@ import { createAuditLog } from "@/lib/audit";
 const consentSchema = z.object({
   consentMethod: z.enum(["PHYSICAL_SCAN", "DIGITAL_PAD"]),
   signatureDataUrl: z.string().min(20).startsWith("data:"),
+  guardianConsent: z.boolean().optional(),
+  guardianName: z.string().optional(),
+  guardianRelationship: z.string().optional(),
 });
 
 const MAX_BYTES = 4 * 1024 * 1024; // 4 MB cap on the data URL
@@ -61,6 +64,9 @@ export async function POST(
         liabilityWaiverSigned: true,
         signatureDataUrl: f.signatureDataUrl,
         frontOfficeExecId: auth.user.id,
+        guardianConsent: f.guardianConsent ?? undefined,
+        guardianName: f.guardianName ?? undefined,
+        guardianRelationship: f.guardianRelationship ?? undefined,
       },
     }),
   ]);

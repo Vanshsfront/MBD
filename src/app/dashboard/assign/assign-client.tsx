@@ -544,12 +544,20 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
   const [capturedSignature, setCapturedSignature] = useState<string | null>(null);
   const [previewed, setPreviewed] = useState(false);
 
+  // Guardian consent (for minors)
+  const [guardianConsent, setGuardianConsent] = useState(false);
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianRelationship, setGuardianRelationship] = useState("");
+
   // Digital pad
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const padRef = useRef<SignaturePad | null>(null);
 
   // Scan upload
   const [scanDataUrl, setScanDataUrl] = useState<string | null>(null);
+
+  // Compute if patient is a minor (age < 18)
+  const isMinor = client.age !== null && client.age < 18;
 
   // Re-arming: when the FO switches signature method or clears the pad we
   // discard any previously-previewed capture so they go through the loop
@@ -661,12 +669,24 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
   async function finalize() {
     const dataUrl = capturedSignature ?? collectSignature();
     if (!dataUrl) return;
+    if (isMinor && !guardianConsent) {
+      toast.error("Guardian consent must be confirmed for minors");
+      return;
+    }
     setPending(true);
     try {
       const res = await fetch(`/api/clients/${client.id}/consent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ consentMethod: method, signatureDataUrl: dataUrl }),
+        body: JSON.stringify({
+          consentMethod: method,
+          signatureDataUrl: dataUrl,
+          ...(isMinor && {
+            guardianConsent,
+            guardianName: guardianName.trim() || undefined,
+            guardianRelationship: guardianRelationship.trim() || undefined,
+          }),
+        }),
       });
       if (!res.ok) {
         throw new Error(await readApiError(res, { fallback: "Couldn't save consent." }));
@@ -761,6 +781,58 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
             ) : null}
           </section>
         )}
+
+        {/* Guardian consent for minors (age < 18) */}
+        {isMinor ? (
+          <section className="space-y-3 rounded-md border border-orange-200 bg-orange-50 p-3">
+            <div className="flex items-start gap-2">
+              <div className="text-xl font-semibold text-orange-900">⚠</div>
+              <div>
+                <p className="font-semibold text-orange-900">Patient is a minor — parental/guardian consent is required</p>
+                <p className="mt-1 text-sm text-orange-800">
+                  Patient is under 18 years old. Confirm that parental or guardian consent has been obtained before finalizing.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-3 border-t border-orange-200 pt-3">
+              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-orange-300 bg-white p-3 hover:bg-orange-50">
+                <input
+                  type="checkbox"
+                  checked={guardianConsent}
+                  onChange={(e) => setGuardianConsent(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm font-medium text-orange-900">
+                  I have obtained consent from the patient's parent/guardian
+                </span>
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="guardian-name" className="text-sm">
+                    Guardian's full name
+                  </Label>
+                  <Input
+                    id="guardian-name"
+                    value={guardianName}
+                    onChange={(e) => setGuardianName(e.target.value)}
+                    placeholder="e.g. Parent or legal guardian name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="guardian-relationship" className="text-sm">
+                    Relationship to patient
+                  </Label>
+                  <Input
+                    id="guardian-relationship"
+                    value={guardianRelationship}
+                    onChange={(e) => setGuardianRelationship(e.target.value)}
+                    placeholder="e.g. Mother, Father, Guardian"
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {/* Two-stage flow per PRD §6.5 update:
             (1) FO clicks "Preview signed consent" — opens a new tab with
