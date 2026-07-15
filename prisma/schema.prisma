@@ -16,7 +16,7 @@ model Centre {
   name              String
   slug              String   @unique // used in IDs: COL-MBD, AND-MBD, etc.
   location          String
-  address           String? // JSON: line1, line2, city, pincode
+  address           String? // JSON: line1, line2, city, state, pincode
   contactPhone      String?
   gstNumber         String?
   panNumber         String?
@@ -204,6 +204,7 @@ model Staff {
   changeRequestsMade         ChangeRequest[]          @relation("ChangeRequester")
   changeRequestsReviewed     ChangeRequest[]          @relation("ChangeReviewer")
   intakeTokensCreated        IntakeToken[]            @relation("IntakeTokenCreator")
+  invoiceCorrectionsCreated  InvoiceCorrection[]
   consultationAttachments    ConsultationAttachment[]
   packageSuggestionsMade     PackageSuggestion[]      @relation("PackageSuggestionSuggester")
   packageSuggestionsResolved PackageSuggestion[]      @relation("PackageSuggestionResolver")
@@ -216,6 +217,7 @@ model Staff {
 model Client {
   id               String    @id @default(cuid())
   clientCode       String    @unique // COL-MBD-0001
+  title            String?
   firstName        String
   lastName         String
   email            String?
@@ -227,7 +229,8 @@ model Client {
   occupation       String?
   sport            String?
   maritalStatus    String?
-  address          String? // JSON: line1, line2, city, pincode
+  address          String? // JSON: line1, line2, city, state, pincode
+  gstNumber        String?
   emergencyContact String? // JSON: name, phone, relationship
   status           String    @default("DRAFT") // DRAFT | ACTIVE | INACTIVE
 
@@ -316,6 +319,9 @@ model IntakeForm {
   liabilityWaiverSigned          Boolean @default(false)
   commercialTermsAccepted        Boolean @default(false)
   cancellationPolicyAcknowledged Boolean @default(false)
+  termsOfServiceAgreed           Boolean @default(false)
+  termsOfServiceVersion          String?
+  termsOfServiceAgreedAt         DateTime?
   signatureDataUrl               String? // patient signature (digital pad)
   consentMethod                  String? // PHYSICAL_SCAN | DIGITAL_PAD
 
@@ -331,6 +337,20 @@ model IntakeForm {
 
   visitDateTime DateTime @default(now())
   createdAt     DateTime @default(now())
+}
+
+// ─── LEGAL DOCUMENT (versioned patient-facing policies) ─────────────
+model LegalDocument {
+  id            String   @id @default(cuid())
+  key           String
+  version       String
+  effectiveDate DateTime
+  bodyMarkdown  String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@unique([key, version])
+  @@index([key, isActive])
 }
 
 // ─── MEDICAL HISTORY (initial, separate from per-modality consultation) ─
@@ -549,6 +569,9 @@ model Invoice {
 
   subtotal    Float
   totalGst    Float
+  cgstAmount  Float @default(0)
+  sgstAmount  Float @default(0)
+  igstAmount  Float @default(0)
   totalAmount Float
   paidAmount  Float @default(0)
 
@@ -561,10 +584,13 @@ model Invoice {
   promotionCode     String?
   promotionDiscount Float      @default(0)
 
-  status     String    @default("DRAFT") // DRAFT | SENT | PAID | PARTIAL | OVERDUE | CANCELLED
-  dueDate    DateTime?
-  validTill  DateTime? // Proforma only
-  referredBy String?
+  status      String    @default("DRAFT") // DRAFT | SENT | PAID | PARTIAL | OVERDUE | CANCELLED
+  isLocked    Boolean   @default(false)
+  lockedAt    DateTime?
+  finalizedAt DateTime?
+  dueDate     DateTime?
+  validTill   DateTime? // Proforma only
+  referredBy  String?
 
   // Line items as JSON. Each line: { service|product, hsnSac, qty, perAmount, lineDiscount, gstRate, lineTotal, consultantId?, consultantName? }
   lineItems String
@@ -585,6 +611,8 @@ model Invoice {
 
   payments   Payment[]
   misEntries MisEntry[]
+  corrections InvoiceCorrection[] @relation("OriginalInvoiceCorrections")
+  correctionRecord InvoiceCorrection? @relation("CorrectionInvoice")
 
   // Client-supplied idempotency token (via "Idempotency-Key" header on POST).
   // When present, a retried POST with the same key returns the original row
@@ -594,6 +622,24 @@ model Invoice {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─── INVOICE CORRECTION (immutable finalized invoice trail) ─────────
+model InvoiceCorrection {
+  id                  String   @id @default(cuid())
+  type                String   // CREDIT_NOTE | REPLACEMENT
+  reason              String
+  status              String   @default("APPLIED") // APPLIED | VOID
+  originalInvoiceId   String
+  originalInvoice     Invoice  @relation("OriginalInvoiceCorrections", fields: [originalInvoiceId], references: [id])
+  correctionInvoiceId String?  @unique
+  correctionInvoice   Invoice? @relation("CorrectionInvoice", fields: [correctionInvoiceId], references: [id])
+  createdById         String
+  createdBy           Staff    @relation(fields: [createdById], references: [id])
+  createdAt           DateTime @default(now())
+
+  @@index([originalInvoiceId])
+  @@index([createdById])
 }
 
 // ─── PAYMENT ─────────────────────────────────────────
@@ -871,6 +917,9 @@ model MisEntry {
   amountBeforeTax  Float     @default(0)
   gstPercent       Float     @default(0)
   gst              Float     @default(0)
+  cgstAmount       Float     @default(0)
+  sgstAmount       Float     @default(0)
+  igstAmount       Float     @default(0)
   netPayableAmount Float     @default(0)
   perSessionAmount Float     @default(0)
   noOfSessions     Int       @default(1)

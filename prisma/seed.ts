@@ -19,12 +19,14 @@
 // db won't dup).
 
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { hash } from "bcryptjs";
 import ExcelJS from "exceljs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 
 const DEFAULT_PASSWORD = "mbd2026";
+const TERMS_OF_SERVICE_KEY = "TERMS_OF_SERVICE";
 
 const ROSTER: Array<{
   email: string;
@@ -268,16 +270,60 @@ async function main() {
     // Centre
     const centre = await prisma.centre.upsert({
       where: { slug: "COL-MBD" },
-      update: {},
+      update: {
+        address: JSON.stringify({
+          line1: "B-5, Ionic, 1st floor, Strand Road",
+          city: "Mumbai",
+          state: "Maharashtra",
+          pincode: "400005",
+        }),
+      },
       create: {
         name: "Movement By Design — Colaba",
         slug: "COL-MBD",
         location: "Colaba, Mumbai",
-        address: JSON.stringify({ line1: "Colaba", city: "Mumbai", pincode: "400005" }),
+        address: JSON.stringify({
+          line1: "B-5, Ionic, 1st floor, Strand Road",
+          city: "Mumbai",
+          state: "Maharashtra",
+          pincode: "400005",
+        }),
         contactPhone: "+91 22 0000 0000",
       },
     });
     console.log(`[seed] Centre upserted: ${centre.slug}`);
+
+    const tosBody = await readFile(
+      path.join(process.cwd(), "reference/legal/terms-of-service-v1.md"),
+      "utf8",
+    );
+    await prisma.$transaction([
+      prisma.legalDocument.updateMany({
+        where: { key: TERMS_OF_SERVICE_KEY, version: { not: "1.0" } },
+        data: { isActive: false },
+      }),
+      prisma.legalDocument.upsert({
+        where: {
+          key_version: {
+            key: TERMS_OF_SERVICE_KEY,
+            version: "1.0",
+          },
+        },
+        update: {
+          effectiveDate: new Date("2026-06-01T00:00:00.000Z"),
+          bodyMarkdown: tosBody,
+          isActive: true,
+        },
+        create: {
+          key: TERMS_OF_SERVICE_KEY,
+          version: "1.0",
+          effectiveDate: new Date("2026-06-01T00:00:00.000Z"),
+          bodyMarkdown: tosBody,
+          isActive: true,
+        },
+      }),
+    ]);
+    console.log("[seed] LegalDocument: Terms of Service v1.0 active");
 
     // Departments
     const deptRows = await Promise.all(
@@ -368,32 +414,6 @@ async function main() {
       serviceCount++;
     }
     console.log(`[seed] Services: ${serviceCount}`);
-
-    // Seed "Initial Consultation" billable service for Medical department
-    const medicalDept = deptByName.get("Medical");
-    if (medicalDept) {
-      await prisma.service.upsert({
-        where: {
-          name_departmentId_centreId: {
-            name: "Initial Consultation",
-            departmentId: medicalDept.id,
-            centreId: centre.id,
-          },
-        },
-        update: {},
-        create: {
-          name: "Initial Consultation",
-          basePrice: 500,
-          gstRate: medicalDept.defaultGstRate,
-          hsnSacCode: medicalDept.defaultHsnSac,
-          departmentId: medicalDept.id,
-          centreId: centre.id,
-          serviceType: "CLINIC",
-          participantCount: 1,
-        },
-      });
-      console.log("[seed] Initial Consultation service seeded (Medical)");
-    }
 
     // Products + InventoryItem
     let productCount = 0;

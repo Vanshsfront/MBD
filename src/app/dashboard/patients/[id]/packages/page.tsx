@@ -66,27 +66,37 @@ export default async function PackagesPage({
     include: { consultant: { select: { name: true } } },
   });
 
-  const services = await prisma.service.findMany({
-    where: {
-      isActive: true,
-      ...(client.centreId ? { centreId: client.centreId } : {}),
-    },
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-      basePrice: true,
-      participantCount: true,
-      durationMin: true,
-      department: { select: { name: true } },
-    },
-  });
-
-  const promotions = await prisma.promotion.findMany({
-    where: { isActive: true },
-    orderBy: { code: "asc" },
-    select: { code: true, name: true, discountType: true, discountValue: true, maxDiscount: true },
-  });
+  const [services, staff, promotions] = await Promise.all([
+    prisma.service.findMany({
+      where: {
+        isActive: true,
+        ...(client.centreId ? { centreId: client.centreId } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        basePrice: true,
+        participantCount: true,
+        durationMin: true,
+        department: { select: { name: true } },
+      },
+    }),
+    prisma.staff.findMany({
+      where: {
+        isActive: true,
+        role: { in: ["CONSULTANT", "THERAPIST", "ADMIN", "OWNER"] },
+        ...(client.centreId ? { centreId: client.centreId } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, designation: true },
+    }),
+    prisma.promotion.findMany({
+      where: { isActive: true },
+      orderBy: { code: "asc" },
+      select: { code: true, name: true, discountType: true, discountValue: true, maxDiscount: true },
+    }),
+  ]);
 
   return (
     <PackagesView
@@ -142,6 +152,11 @@ export default async function PackagesPage({
         participantCount: s.participantCount,
         durationMin: s.durationMin,
         department: s.department?.name ?? null,
+      }))}
+      staff={staff.map((s) => ({
+        id: s.id,
+        name: s.name,
+        designation: s.designation ?? null,
       }))}
       promotions={promotions.map((p) => ({
         code: p.code,

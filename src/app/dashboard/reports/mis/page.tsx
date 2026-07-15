@@ -16,6 +16,7 @@ import { activeCentreId } from "@/lib/centre";
 import { Card } from "@/components/ui/card";
 import { formatINR } from "@/lib/utils";
 import { nativeControlClass } from "@/lib/select-styles";
+import { formatClinicDate } from "@/lib/date-format";
 
 export const metadata = { title: "MIS dashboard — MBD Clinic OS" };
 
@@ -74,12 +75,15 @@ export default async function MisReportPage({
       acc.amount += r.amount;
       acc.discount += r.discount;
       acc.gst += r.gst;
+      acc.cgst += r.cgstAmount;
+      acc.sgst += r.sgstAmount;
+      acc.igst += r.igstAmount;
       acc.netPayable += r.netPayableAmount;
       acc.paid += r.paidAmount;
       acc.balance += r.balanceAmount;
       return acc;
     },
-    { amount: 0, discount: 0, gst: 0, netPayable: 0, paid: 0, balance: 0 },
+    { amount: 0, discount: 0, gst: 0, cgst: 0, sgst: 0, igst: 0, netPayable: 0, paid: 0, balance: 0 },
   );
 
   const fromIso = toLocalIsoDate(from);
@@ -214,6 +218,9 @@ export default async function MisReportPage({
                 <th className="num">Amount</th>
                 <th className="num">Discount</th>
                 <th className="num">GST</th>
+                <th className="num">CGST</th>
+                <th className="num">SGST</th>
+                <th className="num">IGST</th>
                 <th className="num">Net</th>
                 <th className="num">Paid</th>
                 <th className="num">Due</th>
@@ -223,7 +230,7 @@ export default async function MisReportPage({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="text-center text-muted-foreground">
+                  <td colSpan={16} className="text-center text-muted-foreground">
                     No MIS rows in range.
                   </td>
                 </tr>
@@ -239,6 +246,9 @@ export default async function MisReportPage({
                     <td className="num">{formatINR(r.amount)}</td>
                     <td className="num">{r.discount > 0 ? formatINR(r.discount) : "—"}</td>
                     <td className="num">{formatINR(r.gst)}</td>
+                    <td className="num">{r.cgstAmount > 0 ? formatINR(r.cgstAmount) : "—"}</td>
+                    <td className="num">{r.sgstAmount > 0 ? formatINR(r.sgstAmount) : "—"}</td>
+                    <td className="num">{r.igstAmount > 0 ? formatINR(r.igstAmount) : "—"}</td>
                     <td className="num">{formatINR(r.netPayableAmount)}</td>
                     <td className="num">
                       {r.paidAmount > 0 ? formatINR(r.paidAmount) : "—"}
@@ -264,6 +274,9 @@ export default async function MisReportPage({
                   <td className="num">{formatINR(totals.amount)}</td>
                   <td className="num">{formatINR(totals.discount)}</td>
                   <td className="num">{formatINR(totals.gst)}</td>
+                  <td className="num">{formatINR(totals.cgst)}</td>
+                  <td className="num">{formatINR(totals.sgst)}</td>
+                  <td className="num">{formatINR(totals.igst)}</td>
                   <td className="num">{formatINR(totals.netPayable)}</td>
                   <td className="num">{formatINR(totals.paid)}</td>
                   <td className="num">{formatINR(Math.max(0, totals.balance))}</td>
@@ -322,5 +335,5 @@ function toLocalIsoDate(d: Date): string {
 }
 
 function formatShortDate(d: Date): string {
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  return formatClinicDate(d, { day: "2-digit", month: "short" });
 }

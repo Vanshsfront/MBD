@@ -3,6 +3,8 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import assert from "node:assert/strict";
+import PizZip from "pizzip";
 
 import { renderDocxTemplate } from "../src/lib/templates/docx";
 
@@ -37,6 +39,10 @@ async function main() {
     },
     assignedTo: "Dr. Devanshi Vira",
     assignedBy: "Ramchandra Bharankar",
+    termsOfService: {
+      acknowledgement:
+        "Patient has agreed to Terms of Service v1.0, effective 01 Jun 2026, acknowledged 15 Jul 2026.",
+    },
     patientSignature: "Aarav Mehta",
     frontOffice: { name: "Ramchandra Bharankar", signature: "Ramchandra B." },
   };
@@ -44,7 +50,15 @@ async function main() {
   const docx = await renderDocxTemplate("common-intake", data);
   await fs.writeFile(path.join(OUT, "consent-rendered.docx"), docx);
 
-  console.log("[smoke-consent] wrote consent-rendered.docx");
+  const xml = new PizZip(docx).file("word/document.xml")?.asText() ?? "";
+  assert.match(xml, /1\. Informed consent/);
+  assert.match(xml, /2\. Treatment acknowledgement/);
+  assert.match(xml, /3\. Liability waiver/);
+  assert.match(xml, /4\. Commercial terms, cancellation policy, and Terms of Service/);
+  assert.match(xml, /Terms of Service v1\.0/);
+  assert.doesNotMatch(xml, /termsOfService\.acknowledgement/);
+
+  console.log("[smoke-consent] wrote consent-rendered.docx and verified consent/ToS text");
 }
 
 main().catch((err) => {

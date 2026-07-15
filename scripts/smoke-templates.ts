@@ -9,6 +9,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import assert from "node:assert/strict";
 import {
   Document,
   Packer,
@@ -19,8 +20,10 @@ import {
 } from "docx";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import ExcelJS from "exceljs";
 
 import { renderInvoice } from "../src/lib/templates/xlsx";
+import { amountInWordsInr } from "../src/lib/revenue/amount-in-words";
 
 const OUT = path.join(process.cwd(), "tmp", "smoke");
 
@@ -81,6 +84,43 @@ async function renderSampleDocx(templateBuf: Buffer): Promise<Buffer> {
   return out;
 }
 
+async function sheetFromFile(filename: string): Promise<ExcelJS.Worksheet> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filename);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new Error("rendered invoice has no worksheet");
+  return sheet;
+}
+
+function textCell(sheet: ExcelJS.Worksheet, address: string): string {
+  const value = sheet.getCell(address).value;
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    if ("text" in value && typeof value.text === "string") return value.text;
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((run) => run.text).join("");
+    }
+    if ("result" in value) return String(value.result ?? "");
+  }
+  return String(value);
+}
+
+function assertTextCell(
+  sheet: ExcelJS.Worksheet,
+  address: string,
+  expected: string,
+): void {
+  assert.equal(textCell(sheet, address).trim(), expected);
+}
+
+function assertNumberCell(
+  sheet: ExcelJS.Worksheet,
+  address: string,
+  expected: number,
+): void {
+  assert.equal(sheet.getCell(address).value, expected);
+}
+
 async function main() {
   await fs.mkdir(OUT, { recursive: true });
 
@@ -96,7 +136,9 @@ async function main() {
   const services = await renderInvoice({
     flavor: "services",
     centreName: "Movement By Design — Colaba",
+    centreAddress: "B 5, Ionic building, Justice Vyas Marg, Mumbai, Maharashtra, 400005",
     clientName: "Aarav Mehta",
+    clientAddress: "Test address, Mumbai, Maharashtra, 400001",
     invoiceNumber: "COL-MBD/0001/001-2026",
     invoiceDate: new Date(2026, 4, 6),
     referredBy: "Dr. Yasir Zahid",
@@ -123,42 +165,96 @@ async function main() {
       },
     ],
     additionalDiscountPercent: 5,
-    totalPaid: 0,
+    totalGst: 1026,
+    cgstAmount: 513,
+    sgstAmount: 513,
+    igstAmount: 0,
+    totalAmount: 12426,
+    amountInWords: amountInWordsInr(12426),
+    paidBy: "UPI",
+    txnId: "SMOKE-SVC-001",
   });
-  await fs.writeFile(path.join(OUT, "sample-invoice-services.xlsx"), services);
+  const servicesPath = path.join(OUT, "sample-invoice-services.xlsx");
+  await fs.writeFile(servicesPath, services);
+  const servicesSheet = await sheetFromFile(servicesPath);
+  assertTextCell(servicesSheet, "H15", "Invoice No.");
+  assertTextCell(servicesSheet, "H16", "Invoice Date");
+  assertTextCell(servicesSheet, "J15", "COL-MBD/0001/001-2026");
+  assertTextCell(servicesSheet, "J16", "06-May-2026");
+  assertTextCell(servicesSheet, "B16", "Movement By Design — Colaba");
+  assertTextCell(servicesSheet, "D16", "Aarav Mehta");
+  assertNumberCell(servicesSheet, "H55", 0.05);
+  assertTextCell(servicesSheet, "J24", "CGST INR 513.00 | SGST INR 513.00");
+  assertTextCell(servicesSheet, "C61", amountInWordsInr(12426));
+  assertTextCell(servicesSheet, "C64", "UPI");
+  assertTextCell(servicesSheet, "B60", "TXN ID     : SMOKE-SVC-001");
 
   console.log("[smoke] rendering Products invoice…");
   const products = await renderInvoice({
     flavor: "products",
     centreName: "Movement By Design — Colaba",
+    centreAddress: "B 5, Ionic building, Justice Vyas Marg, Mumbai, Maharashtra, 400005",
     clientName: "Aarav Mehta",
+    clientAddress: "Test address, Mumbai, Maharashtra, 400001",
     invoiceNumber: "COL-MBD/0002/002-2026",
     invoiceDate: new Date(2026, 4, 6),
     lineItems: [
       { description: "Theraband", notes: "Resistance band — medium", hsnSac: "95069190", qty: 2, perAmount: 800, lineDiscountFraction: 0 },
       { description: "Kinesio Tape", notes: "5cm × 5m roll", hsnSac: "95069990", qty: 1, perAmount: 1200, lineDiscountFraction: 0.1 },
     ],
+    totalGst: 482.4,
+    igstAmount: 482.4,
+    totalAmount: 3162.4,
+    amountInWords: amountInWordsInr(3162.4),
+    paidBy: "Card",
+    txnId: "SMOKE-PROD-001",
   });
-  await fs.writeFile(path.join(OUT, "sample-invoice-products.xlsx"), products);
+  const productsPath = path.join(OUT, "sample-invoice-products.xlsx");
+  await fs.writeFile(productsPath, products);
+  const productsSheet = await sheetFromFile(productsPath);
+  assertTextCell(productsSheet, "H15", "Invoice No.");
+  assertTextCell(productsSheet, "J15", "COL-MBD/0002/002-2026");
+  assertTextCell(productsSheet, "J24", "IGST INR 482.40");
+  assertNumberCell(productsSheet, "H29", 0.1);
+  assertTextCell(productsSheet, "C55", amountInWordsInr(3162.4));
+  assertTextCell(productsSheet, "C58", "Card");
+  assertTextCell(productsSheet, "C60", "SMOKE-PROD-001");
 
   console.log("[smoke] rendering Manual invoice…");
   const manual = await renderInvoice({
     flavor: "manual",
     centreName: "Movement By Design — Colaba",
+    centreAddress: "B 5, Ionic building, Justice Vyas Marg, Mumbai, Maharashtra, 400005",
     clientName: "Aarav Mehta",
+    clientAddress: "Test address, Mumbai, Maharashtra, 400001",
     invoiceNumber: "COL-MBD/0003/003-2026",
     invoiceDate: new Date(2026, 4, 6),
     lineItems: [
       { description: "Custom rehabilitation programme (4 weeks)", consultant: "Dr. Yasir Zahid", hsnSac: "999314", qty: 1, perAmount: 24000, lineDiscountFraction: 0, gstRate: 0 },
     ],
+    totalGst: 4320,
+    cgstAmount: 2160,
+    sgstAmount: 2160,
+    totalAmount: 28320,
+    amountInWords: amountInWordsInr(28320),
+    paidBy: "Cash",
   });
-  await fs.writeFile(path.join(OUT, "sample-invoice-manual.xlsx"), manual);
+  const manualPath = path.join(OUT, "sample-invoice-manual.xlsx");
+  await fs.writeFile(manualPath, manual);
+  const manualSheet = await sheetFromFile(manualPath);
+  assertTextCell(manualSheet, "H15", "Invoice No.");
+  assertTextCell(manualSheet, "J15", "COL-MBD/0003/003-2026");
+  assertTextCell(manualSheet, "J24", "CGST INR 2160.00 | SGST INR 2160.00");
+  assertTextCell(manualSheet, "C57", amountInWordsInr(28320));
+  assertTextCell(manualSheet, "C60", "Cash");
 
   console.log("[smoke] rendering Proforma invoice…");
   const proforma = await renderInvoice({
     flavor: "proforma",
     centreName: "Movement By Design — Colaba",
+    centreAddress: "B 5, Ionic building, Justice Vyas Marg, Mumbai, Maharashtra, 400005",
     clientName: "Aarav Mehta",
+    clientAddress: "Test address, Mumbai, Maharashtra, 400001",
     invoiceNumber: "COL-MBD/0004/004-2026",
     invoiceDate: new Date(2026, 4, 6),
     validTill: new Date(2026, 5, 6),
@@ -166,10 +262,20 @@ async function main() {
       { description: "Physiotherapy 12-session package", consultant: "Dr. Devanshi Vira", hsnSac: "999314", qty: 12, perAmount: 1800, lineDiscountFraction: 0, gstRate: 0, lineAmount: 21600 },
     ],
     additionalDiscountPercent: 10,
+    totalGst: 3499.2,
+    igstAmount: 3499.2,
+    totalAmount: 22939.2,
+    amountInWords: amountInWordsInr(22939.2),
   });
-  await fs.writeFile(path.join(OUT, "sample-invoice-proforma.xlsx"), proforma);
+  const proformaPath = path.join(OUT, "sample-invoice-proforma.xlsx");
+  await fs.writeFile(proformaPath, proforma);
+  const proformaSheet = await sheetFromFile(proformaPath);
+  assertTextCell(proformaSheet, "H15", "Invoice No.");
+  assertTextCell(proformaSheet, "J15", "COL-MBD/0004/004-2026");
+  assertTextCell(proformaSheet, "J24", "IGST INR 3499.20");
+  assertTextCell(proformaSheet, "C57", amountInWordsInr(22939.2));
 
-  console.log("[smoke] all artifacts written to tmp/smoke/");
+  console.log("[smoke] all artifacts written to tmp/smoke/ and invoice cells verified");
 }
 
 main().catch((err) => {

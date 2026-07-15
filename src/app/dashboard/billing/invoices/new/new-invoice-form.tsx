@@ -33,7 +33,13 @@ import { readApiError } from "@/lib/error-messages";
 interface ClientOption {
   id: string;
   label: string;
+  name: string;
+  title: string | null;
+  clientCode: string;
   phone: string;
+  address: string;
+  addressState: string;
+  gstNumber: string;
 }
 interface ServiceOption {
   id: string;
@@ -105,17 +111,46 @@ function blankLine(): LineItem {
   return { qty: 1, perAmount: 0, gstRate: 0 };
 }
 
+function lineFromService(svc: ServiceOption): LineItem {
+  return {
+    serviceId: svc.id,
+    service: svc.name,
+    hsnSac: svc.hsnSac,
+    perAmount: svc.basePrice,
+    gstRate: svc.gstRate,
+    qty: svc.participantCount,
+    qtyLocked: svc.participantCount > 1 ? svc.participantCount : undefined,
+  };
+}
+
+function isLineEmpty(l: LineItem) {
+  return !l.serviceId && !l.productId && !l.service && l.perAmount === 0;
+}
+
 export function NewInvoiceForm({ clients, services, products, staff, promotions, initialFlavor = "SERVICES", initialSessionId, initialServiceId, initialClientId }: Props) {
   const router = useRouter();
   const [flavor, setFlavor] = useState<Flavor>(initialFlavor);
   const [clientId, setClientId] = useState<string>(initialClientId ?? "");
+  const [clientGstNumber, setClientGstNumber] = useState<string>(
+    () => clients.find((c) => c.id === (initialClientId ?? ""))?.gstNumber ?? "",
+  );
   const [referredBy, setReferredBy] = useState<string>("");
   const [validTill, setValidTill] = useState<string>(""); // PROFORMA only
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [promoCode, setPromoCode] = useState<string>("");
-  const [sessionId, setSessionId] = useState<string | undefined>(initialSessionId);
-  const [lines, setLines] = useState<LineItem[]>([blankLine()]);
+  const [sessionId] = useState<string | undefined>(initialSessionId);
+  const [lines, setLines] = useState<LineItem[]>(() => {
+    if (!initialServiceId || initialFlavor === "PRODUCTS" || initialFlavor === "MANUAL") {
+      return [blankLine()];
+    }
+    const svc = services.find((s) => s.id === initialServiceId);
+    return svc ? [lineFromService(svc)] : [blankLine()];
+  });
   const [pending, setPending] = useState(false);
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === clientId) ?? null,
+    [clients, clientId],
+  );
 
   // Line-item picker (punchlist #5): Recent (this patient) / All services / Products + search.
   // Keyed by patient so a stale fetch never shows the wrong patient's recents
@@ -144,23 +179,6 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
     };
   }, [clientId]);
 
-  // Pre-fill service if initialServiceId is provided.
-  useEffect(() => {
-    if (!initialServiceId || flavor === "PRODUCTS" || flavor === "MANUAL") return;
-    const svc = services.find((s) => s.id === initialServiceId);
-    if (!svc) return;
-    const line: LineItem = {
-      serviceId: svc.id,
-      service: svc.name,
-      hsnSac: svc.hsnSac,
-      perAmount: svc.basePrice,
-      gstRate: svc.gstRate,
-      qty: svc.participantCount,
-      qtyLocked: svc.participantCount > 1 ? svc.participantCount : undefined,
-    };
-    setLines((prev) => (prev.length === 1 && isLineEmpty(prev[0]) ? [line] : prev));
-  }, [initialServiceId, services, flavor]);
-
   // Reset lines when flavor changes — fields differ.
   function switchFlavor(next: Flavor) {
     setFlavor(next);
@@ -180,10 +198,12 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
     setLines((prev) => [...prev, blankLine()]);
   }
 
-  // ── Quick-add picker helpers ────────────────────────────────────────────
-  function isLineEmpty(l: LineItem) {
-    return !l.serviceId && !l.productId && !l.service && l.perAmount === 0;
+  function chooseClient(nextClientId: string) {
+    setClientId(nextClientId);
+    setClientGstNumber(clients.find((c) => c.id === nextClientId)?.gstNumber ?? "");
   }
+
+  // ── Quick-add picker helpers ────────────────────────────────────────────
   function appendOrReplace(line: LineItem) {
     // If the only line is still blank, fill it; otherwise append a new line.
     setLines((prev) => (prev.length === 1 && isLineEmpty(prev[0]) ? [line] : [...prev, line]));
@@ -214,10 +234,9 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
 
   // Services grouped by department for the "All services" tab.
   const servicesByDept = useMemo(() => {
-    const q = pickerQuery.trim().toLowerCase();
     const groups = new Map<string, ServiceOption[]>();
     for (const s of services) {
-      if (q && !s.name.toLowerCase().includes(q) && !(s.department ?? "").toLowerCase().includes(q)) continue;
+      if (!matchesSearch(`${s.name} ${s.department ?? ""}`, pickerQuery)) continue;
       const dept = s.department ?? "Other";
       if (!groups.has(dept)) groups.set(dept, []);
       groups.get(dept)!.push(s);
@@ -227,13 +246,11 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
 
   const recentFiltered = useMemo(() => {
     const list = recent.forClient === clientId ? recent.services : [];
-    const q = pickerQuery.trim().toLowerCase();
-    return q ? list.filter((s) => s.name.toLowerCase().includes(q)) : list;
+    return list.filter((s) => matchesSearch(`${s.name} ${s.department ?? ""}`, pickerQuery));
   }, [recent, clientId, pickerQuery]);
 
   const productsFiltered = useMemo(() => {
-    const q = pickerQuery.trim().toLowerCase();
-    return q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
+    return products.filter((p) => matchesSearch(p.name, pickerQuery));
   }, [products, pickerQuery]);
 
   function pickService(idx: number, serviceId: string) {
@@ -294,6 +311,7 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
 
   function validate(): string | null {
     if (!clientId) return "Pick a patient.";
+    if (!selectedClient?.addressState) return "Patient state is required for GST calculation.";
     if (lines.length === 0) return "Add at least one line.";
     for (const l of lines) {
       if (l.qty < 1) return "Quantity must be ≥ 1.";
@@ -342,6 +360,7 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
               ? new Date(validTill).toISOString()
               : undefined,
           referredBy: referredBy || undefined,
+          clientGstNumber: clientGstNumber.trim() || undefined,
           sessionId: sessionId || undefined,
           discountPercent,
           discountType: "PERCENT",
@@ -406,6 +425,25 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
             ))}
           </div>
 
+          {selectedClient ? (
+            <div className="rounded-lg border border-[color:var(--border-light)] bg-muted/30 p-3 text-sm">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <BillingField label="Patient" value={selectedClient.name} />
+                <BillingField label="Client ID" value={selectedClient.clientCode} />
+                <BillingField label="State" value={selectedClient.addressState || "Missing"} />
+                <BillingField label="Address" value={selectedClient.address || "—"} wide />
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Client GST number</Label>
+                  <Input
+                    value={clientGstNumber}
+                    onChange={(e) => setClientGstNumber(e.target.value.toUpperCase())}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* PROFORMA callout */}
           {flavor === "PROFORMA" ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
@@ -421,7 +459,7 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Patient</Label>
-              <Select value={clientId} onValueChange={setClientId}>
+              <Select value={clientId} onValueChange={chooseClient}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select…" />
                 </SelectTrigger>
@@ -770,12 +808,15 @@ export function NewInvoiceForm({ clients, services, products, staff, promotions,
             // validate() above but lets us disable the button so FO can see at a
             // glance what's missing instead of clicking and reading a toast.
             const missingPatient = !clientId;
+            const missingState = Boolean(clientId) && !selectedClient?.addressState;
             const noLines = lines.length === 0;
             const badQty = lines.some((l) => l.qty < 1);
-            const cantCreate = pending || missingPatient || noLines || badQty;
+            const cantCreate = pending || missingPatient || missingState || noLines || badQty;
             const hint =
               missingPatient
                 ? "Pick a patient first."
+                : missingState
+                  ? "Add the patient's state before creating an invoice."
                 : noLines
                   ? "Add at least one line."
                   : badQty
@@ -841,6 +882,23 @@ function PickerHint({ text }: { text: string }) {
   return <p className="px-1 py-3 text-center text-xs text-muted-foreground">{text}</p>;
 }
 
+function BillingField({
+  label,
+  value,
+  wide,
+}: {
+  label: string;
+  value: string;
+  wide?: boolean;
+}) {
+  return (
+    <div className={wide ? "space-y-1.5 sm:col-span-2" : "space-y-1.5"}>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="text-sm leading-snug">{value}</p>
+    </div>
+  );
+}
+
 function ServicePickRow({ svc, onAdd }: { svc: ServiceOption; onAdd: () => void }) {
   return (
     <button
@@ -873,4 +931,29 @@ function ProductPickRow({ pr, onAdd }: { pr: ProductOption; onAdd: () => void })
       <span className="shrink-0 text-xs font-medium text-primary">+ Add</span>
     </button>
   );
+}
+
+function matchesSearch(text: string, query: string): boolean {
+  const tokens = searchTokens(query);
+  if (tokens.length === 0) return true;
+  const haystack = normalizeSearch(text);
+  return tokens.every((token) => haystack.includes(token));
+}
+
+function searchTokens(query: string): string[] {
+  const generic = new Set(["consult", "consultation", "session", "service", "followup"]);
+  return normalizeSearch(query)
+    .split(" ")
+    .filter((token) => token.length > 1 && !generic.has(token));
+}
+
+function normalizeSearch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/follow[\s-]?up/g, "follow up")
+    .replace(/consults?/g, "consultation")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }

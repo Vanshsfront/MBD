@@ -12,9 +12,15 @@
 //    inline; decrements + writes USED_IN_SESSION + audit.
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { allocateInvoiceNumber } from "../src/lib/invoice-numbering";
 import { computeInvoiceTotals } from "../src/lib/discount";
+import { parseAddress } from "../src/lib/address";
+import { formatPatientName } from "../src/lib/patient-display";
+import { splitGstAmount } from "../src/lib/revenue/tax";
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL not set");
@@ -32,6 +38,64 @@ async function main(): Promise<void> {
     where: { role: "CONSULTANT", isActive: true },
   });
   if (!consultant) throw new Error("no CONSULTANT staff");
+  const clientState = parseAddress(client.address)?.state;
+  const centreState = parseAddress(client.centre.address)?.state;
+  if (!clientState) throw new Error(`client ${client.id} has no address state for GST split`);
+  if (!centreState) throw new Error(`centre ${client.centre.id} has no address state for GST split`);
+
+  const sameStateSplit = splitGstAmount({
+    gstAmount: 180,
+    clientState: "Maharashtra",
+    centreState: "Maharashtra",
+  });
+  assert.deepEqual(sameStateSplit, {
+    cgstAmount: 90,
+    sgstAmount: 90,
+    igstAmount: 0,
+  });
+  const outOfStateSplit = splitGstAmount({
+    gstAmount: 180,
+    clientState: "Karnataka",
+    centreState: "Maharashtra",
+  });
+  assert.deepEqual(outOfStateSplit, {
+    cgstAmount: 0,
+    sgstAmount: 0,
+    igstAmount: 180,
+  });
+  console.log("[smoke-billing] GST split utility ✅ (same-state + out-of-state)");
+
+  const fakeInitialConsultation = await prisma.service.findFirst({
+    where: {
+      name: "Initial Consultation",
+      basePrice: 500,
+      isActive: true,
+      department: { name: "Medical" },
+    },
+  });
+  if (fakeInitialConsultation) {
+    throw new Error("fake ₹500 Medical Initial Consultation is still active");
+  }
+  const realPhysioConsultation = await prisma.service.findFirst({
+    where: {
+      name: { contains: "Physiotherapy Consultation" },
+      basePrice: 1000,
+      isActive: true,
+      department: { name: "Physiotherapy" },
+    },
+  });
+  if (!realPhysioConsultation) {
+    throw new Error("real ₹1,000 Physiotherapy Consultation service not found");
+  }
+  console.log("[smoke-billing] service catalogue ✅ fake removed, real physio consult present");
+
+  const packagesRoute = await fs.readFile(
+    path.join(process.cwd(), "src/app/api/packages/route.ts"),
+    "utf8",
+  );
+  if (packagesRoute.includes("?? auth.user.id")) {
+    throw new Error("package invoice path still falls back to auth.user.id as consultant");
+  }
 
   // Pick a centre InventoryItem with stock for the Products test.
   const inv = await prisma.inventoryItem.findFirst({
@@ -53,7 +117,7 @@ async function main(): Promise<void> {
       qty: 1,
       perAmount: 1500,
       lineDiscount: 0,
-      gstRate: 0,
+      gstRate: 0.18,
     },
   ];
   const manualTotals = computeInvoiceTotals({
@@ -68,6 +132,11 @@ async function main(): Promise<void> {
     centreId: client.centre.id,
     centreSlug: client.centre.slug,
   });
+  const manualTaxSplit = splitGstAmount({
+    gstAmount: manualTotals.totalGst,
+    clientState,
+    centreState,
+  });
   const manualInvoice = await prisma.invoice.create({
     data: {
       invoiceNumber: manualNumberAlloc.invoiceNumber,
@@ -75,6 +144,9 @@ async function main(): Promise<void> {
       invoiceType: "INVOICE",
       subtotal: manualTotals.subtotal,
       totalGst: manualTotals.totalGst,
+      cgstAmount: manualTaxSplit.cgstAmount,
+      sgstAmount: manualTaxSplit.sgstAmount,
+      igstAmount: manualTaxSplit.igstAmount,
       totalAmount: manualTotals.totalAmount,
       paidAmount: 0,
       discountPercent: 0,
@@ -96,7 +168,7 @@ async function main(): Promise<void> {
       centreName: client.centre.name,
       invoiceNumber: manualInvoice.invoiceNumber,
       invoiceDate: manualInvoice.createdAt,
-      patientName: `${client.firstName} ${client.lastName}`,
+      patientName: formatPatientName(client),
       patientType:
         (await prisma.invoice.count({
           where: { clientId: client.id, centreId: client.centre.id, NOT: { id: manualInvoice.id } },
@@ -112,14 +184,17 @@ async function main(): Promise<void> {
       amount: manualLines[0]!.qty * manualLines[0]!.perAmount,
       discount: 0,
       amountBeforeTax: manualLines[0]!.qty * manualLines[0]!.perAmount,
-      gstPercent: 0,
-      gst: 0,
-      netPayableAmount: manualLines[0]!.qty * manualLines[0]!.perAmount,
+      gstPercent: manualLines[0]!.gstRate * 100,
+      gst: manualTotals.totalGst,
+      cgstAmount: manualTaxSplit.cgstAmount,
+      sgstAmount: manualTaxSplit.sgstAmount,
+      igstAmount: manualTaxSplit.igstAmount,
+      netPayableAmount: manualTotals.totalAmount,
       perSessionAmount: manualLines[0]!.perAmount,
       noOfSessions: 1,
       sessionNo: 1,
       paidAmount: 0,
-      balanceAmount: manualLines[0]!.qty * manualLines[0]!.perAmount,
+      balanceAmount: manualTotals.totalAmount,
     },
   });
   cleanup.push(async () => {
@@ -136,6 +211,16 @@ async function main(): Promise<void> {
   }
   if (mis.consultant !== consultant.name) {
     throw new Error(`MIS consultant name not resolved: ${mis.consultant}`);
+  }
+  if (mis.patientName !== formatPatientName(client)) {
+    throw new Error(`MIS patientName not title-aware: ${mis.patientName}`);
+  }
+  if (
+    mis.cgstAmount !== manualTaxSplit.cgstAmount ||
+    mis.sgstAmount !== manualTaxSplit.sgstAmount ||
+    mis.igstAmount !== manualTaxSplit.igstAmount
+  ) {
+    throw new Error("MIS GST split does not match invoice split");
   }
   console.log(
     `[smoke-billing] MIS row → consultantId=${mis.consultantId} consultant="${mis.consultant}" referral="${mis.referralSourceName ?? "—"}"`,
@@ -169,6 +254,11 @@ async function main(): Promise<void> {
         gstRate: l.gstRate,
       })),
     });
+    const taxSplit = splitGstAmount({
+      gstAmount: totals.totalGst,
+      clientState,
+      centreState,
+    });
     const invoice = await tx.invoice.create({
       data: {
         invoiceNumber: productsNumberAlloc.invoiceNumber,
@@ -176,6 +266,9 @@ async function main(): Promise<void> {
         invoiceType: "INVOICE",
         subtotal: totals.subtotal,
         totalGst: totals.totalGst,
+        cgstAmount: taxSplit.cgstAmount,
+        sgstAmount: taxSplit.sgstAmount,
+        igstAmount: taxSplit.igstAmount,
         totalAmount: totals.totalAmount,
         paidAmount: 0,
         status: "SENT",

@@ -38,6 +38,7 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
     name: "",
     slug: "",
     location: "",
+    state: "Maharashtra",
     contactPhone: "",
     gstNumber: "",
     panNumber: "",
@@ -67,6 +68,7 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
           name: form.name.trim(),
           slug: form.slug.trim().toUpperCase(),
           location: form.location.trim(),
+          state: form.state.trim(),
           contactPhone: form.contactPhone.trim() || undefined,
           gstNumber: form.gstNumber.trim() || undefined,
           panNumber: form.panNumber.trim() || undefined,
@@ -94,6 +96,7 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
         name: "",
         slug: "",
         location: "",
+        state: "Maharashtra",
         contactPhone: "",
         gstNumber: "",
         panNumber: "",
@@ -184,6 +187,14 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
               <Input
                 value={form.location}
                 onChange={(e) => update("location", e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>State</Label>
+              <Input
+                value={form.state}
+                onChange={(e) => update("state", e.target.value)}
                 required
               />
             </div>

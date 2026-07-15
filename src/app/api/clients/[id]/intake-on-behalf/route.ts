@@ -18,8 +18,10 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog, computeChanges } from "@/lib/audit";
 import { CATEGORY_KEYS } from "@/lib/categories";
+import { PATIENT_TITLES } from "@/lib/patient-display";
 
 const intakeSchema = z.object({
+  title: z.enum(PATIENT_TITLES).optional(),
   firstName: z.string().trim().min(1, "first_name_required").max(80),
   lastName: z.string().trim().min(1, "last_name_required").max(80),
   email: z.string().trim().email("email_invalid").max(120),
@@ -35,6 +37,7 @@ const intakeSchema = z.object({
   sport: z.string().max(120).optional(),
   addressLine1: z.string().trim().min(1, "address_line1_required").max(200),
   addressCity: z.string().trim().min(1, "address_city_required").max(80),
+  addressState: z.string().trim().min(1, "address_state_required").max(80),
   addressPincode: z
     .string()
     .trim()
@@ -54,6 +57,7 @@ const intakeSchema = z.object({
   liabilityWaiver: z.literal(true, { message: "liability_required" }),
   commercialTerms: z.literal(true, { message: "commercial_required" }),
   cancellationPolicy: z.literal(true, { message: "cancellation_required" }),
+  agreedToTerms: z.literal(true, { message: "terms_required" }),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -81,6 +85,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const f = parsed.data;
   const meta = requestMeta(req);
 
+  const activeTerms = await prisma.legalDocument.findFirst({
+    where: { key: "TERMS_OF_SERVICE", isActive: true },
+    orderBy: { effectiveDate: "desc" },
+    select: { version: true },
+  });
+  if (!activeTerms) {
+    return NextResponse.json({ error: "active_terms_of_service_missing" }, { status: 503 });
+  }
+
   // Trust dob, recompute age (matches /api/intake/[token]/submit).
   const dob = new Date(f.dob);
   const computedAge = (() => {
@@ -100,6 +113,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // form (here OR on the patient-self path) flips them back to COMPLETED.
     intakeStatus: "COMPLETED",
   };
+  if (!client.title && f.title) updateData.title = f.title;
   if (!client.firstName?.trim()) updateData.firstName = f.firstName;
   if (!client.lastName?.trim()) updateData.lastName = f.lastName;
   if (!client.phone?.trim()) updateData.phone = f.phone;
@@ -117,6 +131,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     updateData.address = JSON.stringify({
       line1: f.addressLine1,
       city: f.addressCity,
+      state: f.addressState,
       pincode: f.addressPincode,
     });
   }
@@ -143,6 +158,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         liabilityWaiverSigned: false,
         commercialTermsAccepted: f.commercialTerms,
         cancellationPolicyAcknowledged: f.cancellationPolicy,
+        termsOfServiceAgreed: true,
+        termsOfServiceVersion: activeTerms.version,
+        termsOfServiceAgreedAt: new Date(),
         frontOfficeExecId: auth.user.id,
       },
     });
@@ -155,6 +173,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     result.client as unknown as Record<string, unknown>,
     [
       "firstName",
+      "title",
       "lastName",
       "email",
       "phone",

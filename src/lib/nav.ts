@@ -57,6 +57,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Assignment queue", href: "/dashboard/assign", section: "patients", permission: "patients:assign_therapist", icon: "user-plus" },
   { label: "Patients", href: "/dashboard/patients", section: "patients", permission: "patients:view_assigned", icon: "users" },
   { label: "Calendar", href: "/dashboard/calendar", section: "patients", permission: "appointments:view_calendar_all", icon: "calendar" },
+  { label: "Upcoming appointments", href: "/dashboard/appointments/upcoming", section: "patients", permission: "appointments:view_calendar_all", icon: "list" },
   { label: "Sessions", href: "/dashboard/sessions", section: "patients", permission: "patients:view_assigned", icon: "stethoscope" },
 
   // Patients (clinical-role action)

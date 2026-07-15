@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDate } from "@/lib/date-format";
 
 interface ProformaLineItem {
   name: string;
@@ -109,7 +110,7 @@ export function ProformaSection({
                   {validTillDate && (
                     <p className="text-xs text-muted-foreground">
                       Valid till{" "}
-                      {validTillDate.toLocaleDateString("en-IN", {
+                      {formatClinicDate(validTillDate, {
                         day: "2-digit",
                         month: "short",
                         year: "numeric",

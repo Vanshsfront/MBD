@@ -1,93 +1,211 @@
 // MBD Clinic OS — Invoice XLSX rendering (PRD §6.1, §6.2).
 //
-// Loads one of the 4 invoice templates, writes header data + line items into
-// known cells, returns a Buffer of the modified workbook. Formulas in the
-// templates (VLOOKUP, SUMPRODUCT, SUM) are preserved by ExcelJS unless we
-// explicitly overwrite them.
-//
-// Header / line-item layout (per format-parser report):
-//
-//   Row 15: company + client + invoice number
-//   Row 16: invoice date
-//   Row 17: valid-till (Proforma only)
-//   Rows 28–53: 26 line items.
-//     Services: B service, D consultant, E HSN, F qty, G disc, H price, I gst, J amount
-//     Products: B product, D notes, E price/piece, F HSN, G qty, H disc, I amount
-//     Manual:   B desc, D consultant, E HSN, F qty, G disc, H price, I gst, J amount
-//   Row 54: additional discount label/value
-//   Row 55: total paid
-//   Row 58: totals (sessions / GST sum / grand total)
+// The four invoice workbooks look similar but their totals/payment rows are
+// not identical. Keep the write map per flavor so data never lands in label
+// cells such as "Invoice No.", "Invoice Date", or "Total Paid".
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import { CLINIC_TIME_ZONE } from "@/lib/date-format";
 import { INVOICE_TEMPLATES, type InvoiceFlavor } from "@/lib/templates/keys";
 
 const TEMPLATES_ROOT = path.join(process.cwd(), "templates");
-
-const HEADER = {
-  invoiceNumberCell: "H15",
-  invoiceNumberSuffixCell: "K15",
-  invoiceDateCell: "H16",
-  validTillCell: "H17",
-  clientNameCell: "D15",
-  centreNameCell: "B15",
-  referredByCell: "I23",
-} as const;
-
 const LINE_ITEM_FIRST_ROW = 28;
-const LINE_ITEM_MAX_ROWS = 26;
+export const INVOICE_TEMPLATE_LINE_LIMIT = 26;
 
-const TOTALS = {
-  additionalDiscountPercentCell: "H55",
-  additionalDiscountAmountCell: "J54",
-  totalPaidCell: "I55",
-} as const;
+type CellValue = string | number | null;
+
+interface FlavorMap {
+  clientNameCell: string;
+  clientAddressCell: string;
+  clientGstCell: string;
+  invoiceNumberCell: string;
+  invoiceNumberClearCells: string[];
+  invoiceDateCell: string;
+  invoiceDateClearCells: string[];
+  validTillCell?: string;
+  validTillClearCells?: string[];
+  referredByCell: string;
+  taxLabelCell: string;
+  taxValueCell: string;
+  totalGstCell?: string;
+  totalAmountCell: string;
+  amountWordsCell: string;
+  paidByCell?: string;
+  txnIdCell?: string;
+  additionalDiscountPercentCell?: string;
+  preTaxTotalCell?: string;
+  lineColumns: {
+    description: string;
+    notes?: string;
+    consultant?: string;
+    hsnSac?: string;
+    qty: string;
+    discount: string;
+    perAmount: string;
+    gstRate?: string;
+    amount: string;
+  };
+  clearColumns: string[];
+}
+
+const FLAVOR_MAPS: Record<InvoiceFlavor, FlavorMap> = {
+  services: {
+    clientNameCell: "D16",
+    clientAddressCell: "D17",
+    clientGstCell: "D18",
+    invoiceNumberCell: "J15",
+    invoiceNumberClearCells: ["K15", "L15", "M15", "N15"],
+    invoiceDateCell: "J16",
+    invoiceDateClearCells: ["K16", "L16", "M16", "N16"],
+    referredByCell: "J23",
+    taxLabelCell: "H24",
+    taxValueCell: "J24",
+    totalGstCell: "J58",
+    totalAmountCell: "J61",
+    amountWordsCell: "C61",
+    paidByCell: "C64",
+    txnIdCell: "B60",
+    additionalDiscountPercentCell: "H55",
+    preTaxTotalCell: "J54",
+    lineColumns: {
+      description: "B",
+      consultant: "D",
+      hsnSac: "E",
+      qty: "F",
+      discount: "G",
+      perAmount: "H",
+      gstRate: "I",
+      amount: "J",
+    },
+    clearColumns: ["B", "D", "E", "F", "G", "H", "I", "J"],
+  },
+  products: {
+    clientNameCell: "D16",
+    clientAddressCell: "D17",
+    clientGstCell: "D18",
+    invoiceNumberCell: "J15",
+    invoiceNumberClearCells: ["K15", "L15", "M15", "N15"],
+    invoiceDateCell: "J16",
+    invoiceDateClearCells: ["K16", "L16", "M16", "N16"],
+    referredByCell: "J23",
+    taxLabelCell: "H24",
+    taxValueCell: "J24",
+    totalAmountCell: "I55",
+    amountWordsCell: "C55",
+    paidByCell: "C58",
+    txnIdCell: "C60",
+    lineColumns: {
+      description: "B",
+      notes: "D",
+      perAmount: "E",
+      hsnSac: "F",
+      qty: "G",
+      discount: "H",
+      amount: "I",
+    },
+    clearColumns: ["B", "D", "E", "F", "G", "H", "I"],
+  },
+  manual: {
+    clientNameCell: "D16",
+    clientAddressCell: "D17",
+    clientGstCell: "D18",
+    invoiceNumberCell: "J15",
+    invoiceNumberClearCells: ["K15", "L15", "M15", "N15"],
+    invoiceDateCell: "J16",
+    invoiceDateClearCells: ["K16", "L16", "M16", "N16"],
+    referredByCell: "J23",
+    taxLabelCell: "H24",
+    taxValueCell: "J24",
+    totalGstCell: "J54",
+    totalAmountCell: "J57",
+    amountWordsCell: "C57",
+    paidByCell: "C60",
+    txnIdCell: "C62",
+    lineColumns: {
+      description: "B",
+      consultant: "D",
+      hsnSac: "E",
+      qty: "F",
+      discount: "G",
+      perAmount: "H",
+      gstRate: "I",
+      amount: "J",
+    },
+    clearColumns: ["B", "D", "E", "F", "G", "H", "I", "J"],
+  },
+  proforma: {
+    clientNameCell: "D16",
+    clientAddressCell: "D17",
+    clientGstCell: "D18",
+    invoiceNumberCell: "J15",
+    invoiceNumberClearCells: ["K15", "L15", "M15", "N15"],
+    invoiceDateCell: "J16",
+    invoiceDateClearCells: ["K16", "L16", "M16", "N16"],
+    validTillCell: "J17",
+    validTillClearCells: ["K17", "L17", "M17", "N17"],
+    referredByCell: "J23",
+    taxLabelCell: "H24",
+    taxValueCell: "J24",
+    totalGstCell: "J54",
+    totalAmountCell: "J57",
+    amountWordsCell: "C57",
+    lineColumns: {
+      description: "B",
+      consultant: "D",
+      qty: "F",
+      discount: "G",
+      perAmount: "H",
+      gstRate: "I",
+      amount: "J",
+    },
+    clearColumns: ["B", "D", "F", "G", "H", "I", "J"],
+  },
+};
 
 export interface InvoiceLineCommon {
-  /** "Service" name (Services / Manual) or "Product" name (Products) */
   description: string;
-  /** Optional notes column (Products) */
   notes?: string;
-  /** Consultant display name (Services / Manual) */
   consultant?: string;
-  /** HSN/SAC code */
   hsnSac?: string;
-  /** Quantity (sessions / pieces) */
   qty: number;
-  /** Per-unit price (sessions / per-piece) */
   perAmount: number;
-  /** Per-line discount fraction (0–1) */
   lineDiscountFraction?: number;
-  /** GST rate fraction (0–1), e.g. 0.18 */
   gstRate?: number;
-  /** Pre-computed line amount (post-discount, pre-GST). Optional — the renderer
-   *  will compute and write it if omitted. */
   lineAmount?: number;
 }
 
 export interface RenderInvoiceArgs {
   flavor: InvoiceFlavor;
   centreName: string;
+  centreAddress?: string;
+  centrePhone?: string | null;
+  centreGstNumber?: string | null;
+  centrePanNumber?: string | null;
   clientName: string;
+  clientAddress?: string;
+  clientGstNumber?: string | null;
   invoiceNumber: string;
   invoiceDate: Date;
-  /** Proforma only */
   validTill?: Date;
   referredBy?: string;
   lineItems: InvoiceLineCommon[];
-  /** Across-the-invoice manual discount (PERCENT). */
   additionalDiscountPercent?: number;
-  /** Or a flat discount amount. */
-  additionalDiscountAmount?: number;
-  /** Total paid so far. */
-  totalPaid?: number;
+  totalGst: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  totalAmount: number;
+  amountInWords: string;
+  paidBy?: string;
+  txnId?: string;
 }
 
 export async function renderInvoice(args: RenderInvoiceArgs): Promise<Buffer> {
-  if (args.lineItems.length > LINE_ITEM_MAX_ROWS) {
+  if (args.lineItems.length > INVOICE_TEMPLATE_LINE_LIMIT) {
     throw new Error(
-      `Invoice has ${args.lineItems.length} line items; template only supports ${LINE_ITEM_MAX_ROWS}.`,
+      `Invoice has ${args.lineItems.length} line items; template only supports ${INVOICE_TEMPLATE_LINE_LIMIT}.`,
     );
   }
 
@@ -97,113 +215,154 @@ export async function renderInvoice(args: RenderInvoiceArgs): Promise<Buffer> {
 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
-  // The first sheet is the invoice template.
   const sheet = wb.worksheets[0];
   if (!sheet) throw new Error("Invoice template has no worksheets");
 
-  // Header
-  setCell(sheet, HEADER.centreNameCell, args.centreName);
-  setCell(sheet, HEADER.clientNameCell, args.clientName);
-  setCell(sheet, HEADER.invoiceNumberCell, args.invoiceNumber);
-  setCell(sheet, HEADER.invoiceDateCell, formatDate(args.invoiceDate));
-  if (args.flavor === "proforma" && args.validTill) {
-    setCell(sheet, HEADER.validTillCell, formatDate(args.validTill));
-  }
-  if (args.referredBy) {
-    setCell(sheet, HEADER.referredByCell, args.referredBy);
-  }
-
-  // Line items
-  for (let i = 0; i < args.lineItems.length; i++) {
-    const row = LINE_ITEM_FIRST_ROW + i;
-    writeLineItem(sheet, row, args.flavor, args.lineItems[i]!);
-  }
-
-  // Clear any leftover line-item rows beyond what we wrote (in case the
-  // template had previous values).
-  for (let i = args.lineItems.length; i < LINE_ITEM_MAX_ROWS; i++) {
-    const row = LINE_ITEM_FIRST_ROW + i;
-    clearLineItem(sheet, row, args.flavor);
-  }
-
-  // Totals
-  if (args.additionalDiscountPercent !== undefined) {
-    setCell(sheet, TOTALS.additionalDiscountPercentCell, args.additionalDiscountPercent);
-  }
-  if (args.additionalDiscountAmount !== undefined) {
-    setCell(sheet, TOTALS.additionalDiscountAmountCell, args.additionalDiscountAmount);
-  }
-  if (args.totalPaid !== undefined) {
-    setCell(sheet, TOTALS.totalPaidCell, args.totalPaid);
-  }
+  const map = FLAVOR_MAPS[args.flavor];
+  writeHeader(sheet, map, args);
+  writeLineItems(sheet, map, args);
+  writeTotals(sheet, map, args);
 
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out);
 }
 
-// ---------- helpers ----------
-
-function setCell(
+function writeHeader(
   sheet: ExcelJS.Worksheet,
-  address: string,
-  value: string | number | Date,
+  map: FlavorMap,
+  args: RenderInvoiceArgs,
 ): void {
-  const cell = sheet.getCell(address);
-  cell.value = value;
+  setCell(sheet, "B16", args.centreName);
+  const centreLines = splitAddress(args.centreAddress);
+  setCell(sheet, "B17", centreLines[0] ?? "");
+  setCell(sheet, "B18", centreLines[1] ?? "");
+  setCell(sheet, "B19", centreLines[2] ?? "");
+  setCell(sheet, "B20", centreLines[3] ?? "");
+  setCell(
+    sheet,
+    "B21",
+    args.centrePhone ? `Contact No. : ${args.centrePhone}` : "",
+  );
+  if (args.centrePanNumber) setCell(sheet, "J20", args.centrePanNumber);
+  if (args.centreGstNumber) setCell(sheet, "J21", args.centreGstNumber);
+
+  setCell(sheet, map.clientNameCell, args.clientName);
+  setCell(sheet, map.clientAddressCell, args.clientAddress ?? "");
+  setCell(
+    sheet,
+    map.clientGstCell,
+    args.clientGstNumber ? `Client GST: ${args.clientGstNumber}` : "",
+  );
+
+  setCell(sheet, map.invoiceNumberCell, args.invoiceNumber);
+  clearCells(sheet, map.invoiceNumberClearCells);
+  setCell(sheet, map.invoiceDateCell, formatDate(args.invoiceDate));
+  clearCells(sheet, map.invoiceDateClearCells);
+  if (map.validTillCell) {
+    setCell(sheet, map.validTillCell, args.validTill ? formatDate(args.validTill) : "");
+    clearCells(sheet, map.validTillClearCells ?? []);
+  }
+  setCell(sheet, map.referredByCell, args.referredBy ?? "");
+
+  setCell(sheet, map.taxLabelCell, "GST split");
+  setCell(sheet, map.taxValueCell, formatTaxSplit(args));
 }
 
-function formatDate(d: Date): string {
-  // dd-MMM-yyyy is the format the original templates display.
-  const day = d.getDate().toString().padStart(2, "0");
-  const month = d.toLocaleString("en-IN", { month: "short" });
-  return `${day}-${month}-${d.getFullYear()}`;
-}
-
-function writeLineItem(
+function writeLineItems(
   sheet: ExcelJS.Worksheet,
-  row: number,
-  flavor: InvoiceFlavor,
-  item: InvoiceLineCommon,
+  map: FlavorMap,
+  args: RenderInvoiceArgs,
 ): void {
-  if (flavor === "products") {
-    sheet.getCell(`B${row}`).value = item.description;
-    sheet.getCell(`D${row}`).value = item.notes ?? "";
-    sheet.getCell(`E${row}`).value = item.perAmount;
-    sheet.getCell(`F${row}`).value = item.hsnSac ?? "";
-    sheet.getCell(`G${row}`).value = item.qty;
-    sheet.getCell(`H${row}`).value = item.lineDiscountFraction ?? 0;
-    if (item.lineAmount !== undefined) {
-      sheet.getCell(`I${row}`).value = item.lineAmount;
+  for (let i = 0; i < args.lineItems.length; i++) {
+    const row = LINE_ITEM_FIRST_ROW + i;
+    const item = args.lineItems[i]!;
+    const cols = map.lineColumns;
+    setCell(sheet, `${cols.description}${row}`, item.description);
+    if (cols.notes) setCell(sheet, `${cols.notes}${row}`, item.notes ?? "");
+    if (cols.consultant) setCell(sheet, `${cols.consultant}${row}`, item.consultant ?? "");
+    if (cols.hsnSac) setCell(sheet, `${cols.hsnSac}${row}`, item.hsnSac ?? "");
+    setCell(sheet, `${cols.qty}${row}`, item.qty);
+    setCell(sheet, `${cols.discount}${row}`, item.lineDiscountFraction ?? 0);
+    setCell(sheet, `${cols.perAmount}${row}`, item.perAmount);
+    if (cols.gstRate) setCell(sheet, `${cols.gstRate}${row}`, item.gstRate ?? 0);
+    setCell(sheet, `${cols.amount}${row}`, item.lineAmount ?? lineAmount(item));
+  }
+
+  for (let i = args.lineItems.length; i < INVOICE_TEMPLATE_LINE_LIMIT; i++) {
+    const row = LINE_ITEM_FIRST_ROW + i;
+    for (const col of map.clearColumns) {
+      sheet.getCell(`${col}${row}`).value = "";
     }
-    return;
-  }
-
-  // Services / Manual / Proforma share the same column layout.
-  sheet.getCell(`B${row}`).value = item.description;
-  sheet.getCell(`D${row}`).value = item.consultant ?? "";
-  sheet.getCell(`E${row}`).value = item.hsnSac ?? "";
-  sheet.getCell(`F${row}`).value = item.qty;
-  sheet.getCell(`G${row}`).value = item.lineDiscountFraction ?? 0;
-  sheet.getCell(`H${row}`).value = item.perAmount;
-  if (item.gstRate !== undefined) {
-    sheet.getCell(`I${row}`).value = item.gstRate;
-  }
-  if (item.lineAmount !== undefined) {
-    sheet.getCell(`J${row}`).value = item.lineAmount;
   }
 }
 
-function clearLineItem(
+function writeTotals(
   sheet: ExcelJS.Worksheet,
-  row: number,
-  flavor: InvoiceFlavor,
+  map: FlavorMap,
+  args: RenderInvoiceArgs,
 ): void {
-  const cols = flavor === "products" ? ["B", "D", "E", "F", "G", "H", "I"] : ["B", "D", "E", "F", "G", "H", "I", "J"];
-  for (const col of cols) {
-    const cell = sheet.getCell(`${col}${row}`);
-    // Don't clobber template formulas — only blank text/number values.
-    if (typeof cell.value === "string" || typeof cell.value === "number") {
-      cell.value = "";
-    }
+  if (map.additionalDiscountPercentCell) {
+    setCell(
+      sheet,
+      map.additionalDiscountPercentCell,
+      args.additionalDiscountPercent ? args.additionalDiscountPercent / 100 : 0,
+    );
   }
+  if (map.preTaxTotalCell) setCell(sheet, map.preTaxTotalCell, round2(args.totalAmount - args.totalGst));
+  if (map.totalGstCell) setCell(sheet, map.totalGstCell, args.totalGst);
+  setCell(sheet, map.totalAmountCell, args.totalAmount);
+  setCell(sheet, map.amountWordsCell, args.amountInWords);
+  if (map.paidByCell) setCell(sheet, map.paidByCell, args.paidBy ?? "");
+  if (map.txnIdCell) {
+    const labelPrefix = map.txnIdCell === "B60" ? "TXN ID     : " : "";
+    setCell(sheet, map.txnIdCell, args.txnId ? `${labelPrefix}${args.txnId}` : "");
+  }
+}
+
+function setCell(sheet: ExcelJS.Worksheet, address: string, value: CellValue): void {
+  sheet.getCell(address).value = value;
+}
+
+function clearCells(sheet: ExcelJS.Worksheet, cells: string[]): void {
+  for (const cell of cells) setCell(sheet, cell, "");
+}
+
+function splitAddress(address: string | undefined): string[] {
+  if (!address) return [];
+  const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= 4) return parts;
+  return [
+    parts.slice(0, 2).join(", "),
+    parts.slice(2, 4).join(", "),
+    parts.slice(4, 6).join(", "),
+    parts.slice(6).join(", "),
+  ];
+}
+
+function formatDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    timeZone: CLINIC_TIME_ZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("day")}-${get("month")}-${get("year")}`;
+}
+
+function lineAmount(item: InvoiceLineCommon): number {
+  return round2(item.qty * item.perAmount * (1 - (item.lineDiscountFraction ?? 0)));
+}
+
+function formatTaxSplit(args: RenderInvoiceArgs): string {
+  const parts: string[] = [];
+  if ((args.cgstAmount ?? 0) > 0) parts.push(`CGST INR ${round2(args.cgstAmount!).toFixed(2)}`);
+  if ((args.sgstAmount ?? 0) > 0) parts.push(`SGST INR ${round2(args.sgstAmount!).toFixed(2)}`);
+  if ((args.igstAmount ?? 0) > 0) parts.push(`IGST INR ${round2(args.igstAmount!).toFixed(2)}`);
+  if (parts.length === 0 && args.totalGst > 0) parts.push(`GST INR ${round2(args.totalGst).toFixed(2)}`);
+  return parts.join(" | ");
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

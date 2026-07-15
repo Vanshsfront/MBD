@@ -8,12 +8,21 @@ import { CalendarClient } from "./calendar-client";
 
 export const metadata = { title: "Calendar — MBD Clinic OS" };
 
-export default async function CalendarPage() {
+export default async function CalendarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ clientId?: string; returnTo?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!hasPermission(session.user.role, "appointments:view_calendar_all")) {
     redirect("/dashboard");
   }
+
+  const params = await searchParams;
+  const initialClientId = params.clientId ?? "";
+  const returnTo =
+    params.returnTo?.startsWith("/dashboard/patients/") ? params.returnTo : undefined;
 
   const canBook = hasPermission(session.user.role, "appointments:book_reschedule_cancel");
   // Front office books slots but does not assign the clinical service — the
@@ -62,6 +71,8 @@ export default async function CalendarPage() {
       isClinicalRole={!canBook}
       canBook={canBook}
       canAssignService={canAssignService}
+      initialClientId={initialClientId}
+      returnTo={returnTo}
       therapists={therapists.map((t) => ({
         id: t.id,
         name: t.name,

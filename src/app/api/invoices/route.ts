@@ -11,6 +11,9 @@ import { createAuditLog } from "@/lib/audit";
 import { allocateInvoiceNumber } from "@/lib/invoice-numbering";
 import { computeInvoiceTotals, type DiscountType } from "@/lib/discount";
 import { activeCentreId } from "@/lib/centre";
+import { parseAddress } from "@/lib/address";
+import { formatPatientName } from "@/lib/patient-display";
+import { splitGstAmount } from "@/lib/revenue/tax";
 
 // `.strict()` rejects unknown body keys so a client can't smuggle
 // server-derived fields (centreId, invoiceNumber, idempotencyKey,
@@ -40,6 +43,7 @@ const createSchema = z
     invoiceType: z.enum(["INVOICE", "PROFORMA"]).default("INVOICE"),
     validTill: z.string().datetime().optional(),
     referredBy: z.string().max(120).optional(),
+    clientGstNumber: z.string().max(40).optional(),
     sessionId: z.string().optional(),
     lineItems: z.array(lineSchema).min(1),
     discountPercent: z.number().min(0).max(100).default(0),
@@ -92,9 +96,17 @@ export async function POST(req: Request) {
   const scope = await assertCentreScope(auth.user, client);
   if (scope) return scope;
 
-  // Resolve consultant per line: if the form passed a consultantId, look up
-  // the staff name; otherwise fall back to the FO who's creating the invoice.
-  // The MIS row needs both the ID and a display name.
+  const clientState = parseAddress(client.address)?.state;
+  const centreState = parseAddress(client.centre.address)?.state;
+  if (!clientState) {
+    return NextResponse.json({ error: "client_state_required_for_gst" }, { status: 400 });
+  }
+  if (!centreState) {
+    return NextResponse.json({ error: "centre_state_required_for_gst" }, { status: 400 });
+  }
+
+  // Resolve consultant names for line snapshots and MIS. If none is supplied,
+  // leave the row unattributed; never credit the logged-in FO by fallback.
   const consultantIds = new Set<string>();
   for (const li of f.lineItems) {
     if (li.consultantId) consultantIds.add(li.consultantId);
@@ -102,10 +114,22 @@ export async function POST(req: Request) {
   const staffById = new Map<string, { id: string; name: string }>();
   if (consultantIds.size > 0) {
     const rows = await prisma.staff.findMany({
-      where: { id: { in: Array.from(consultantIds) } },
+      where: {
+        id: { in: Array.from(consultantIds) },
+        isActive: true,
+        role: { in: ["CONSULTANT", "THERAPIST", "ADMIN", "OWNER"] },
+      },
       select: { id: true, name: true },
     });
     for (const r of rows) staffById.set(r.id, r);
+  }
+  for (const id of consultantIds) {
+    if (!staffById.has(id)) {
+      return NextResponse.json(
+        { error: "consultant_not_found_or_inactive", consultantId: id },
+        { status: 400 },
+      );
+    }
   }
 
   // Products flavor: pre-flight inventory checks — every line must have a
@@ -208,14 +232,27 @@ export async function POST(req: Request) {
           }
         : undefined,
   });
+  const taxSplit = splitGstAmount({
+    gstAmount: totals.totalGst,
+    clientState,
+    centreState,
+  });
 
   const meta = requestMeta(req);
 
   const result = await prisma.$transaction(async (tx) => {
+    if (f.clientGstNumber?.trim() && f.clientGstNumber.trim() !== client.gstNumber) {
+      await tx.client.update({
+        where: { id: client.id },
+        data: { gstNumber: f.clientGstNumber.trim() },
+      });
+    }
+
     const numberAlloc = await allocateInvoiceNumber({
       centreId: client.centre!.id,
       centreSlug: client.centre!.slug,
     });
+    const finalizedAt = f.invoiceType === "INVOICE" ? new Date() : null;
 
     const invoice = await tx.invoice.create({
       data: {
@@ -226,6 +263,9 @@ export async function POST(req: Request) {
         referredBy: f.referredBy ?? null,
         subtotal: totals.subtotal,
         totalGst: totals.totalGst,
+        cgstAmount: taxSplit.cgstAmount,
+        sgstAmount: taxSplit.sgstAmount,
+        igstAmount: taxSplit.igstAmount,
         totalAmount: totals.totalAmount,
         paidAmount: 0,
         discountPercent: f.discountPercent,
@@ -235,10 +275,18 @@ export async function POST(req: Request) {
         promotionCode: promo?.code ?? null,
         promotionDiscount: totals.promotionDiscount,
         status: f.invoiceType === "PROFORMA" ? "DRAFT" : "SENT",
+        isLocked: f.invoiceType === "INVOICE",
+        lockedAt: finalizedAt,
+        finalizedAt,
         sessionId: f.sessionId ?? null,
         lineItems: JSON.stringify(
           f.lineItems.map((l) => ({
             ...l,
+            consultantId: l.consultantId ?? null,
+            consultantName:
+              l.consultantName ??
+              staffById.get(l.consultantId ?? "")?.name ??
+              null,
             lineTotal: l.qty * l.perAmount * (1 - (l.lineDiscount ?? 0)),
           })),
         ),
@@ -259,12 +307,16 @@ export async function POST(req: Request) {
       const netLine = gross * (1 - (li.lineDiscount ?? 0));
       const lineAfterAll = misRound2(netLine * misRatio);
       const gst = misRound2(lineAfterAll * li.gstRate);
-      const consultantId = li.consultantId ?? auth.user.id;
+      const lineTaxSplit = splitGstAmount({
+        gstAmount: gst,
+        clientState,
+        centreState,
+      });
+      const consultantId = li.consultantId ?? null;
       const consultantName =
         li.consultantName ??
         staffById.get(li.consultantId ?? "")?.name ??
-        auth.user.name ??
-        "—";
+        null;
       await tx.misEntry.create({
         data: {
           invoiceId: invoice.id,
@@ -274,7 +326,7 @@ export async function POST(req: Request) {
           centreName: client.centre!.name,
           invoiceNumber: invoice.invoiceNumber,
           invoiceDate: invoice.createdAt,
-          patientName: `${client.firstName} ${client.lastName}`,
+          patientName: formatPatientName(client),
           patientType: resolvedPatientType,
           customerType: client.customerType,
           referralSourceName:
@@ -288,6 +340,9 @@ export async function POST(req: Request) {
           amountBeforeTax: lineAfterAll,
           gstPercent: li.gstRate * 100,
           gst,
+          cgstAmount: lineTaxSplit.cgstAmount,
+          sgstAmount: lineTaxSplit.sgstAmount,
+          igstAmount: lineTaxSplit.igstAmount,
           netPayableAmount: misRound2(lineAfterAll + gst),
           perSessionAmount: li.perAmount,
           noOfSessions: li.qty,
@@ -325,6 +380,21 @@ export async function POST(req: Request) {
     return invoice;
   });
 
+  const nextClientGst = f.clientGstNumber?.trim() || null;
+  if (nextClientGst && nextClientGst !== client.gstNumber) {
+    await createAuditLog({
+      action: "UPDATE",
+      entity: "Client",
+      entityId: client.id,
+      performedById: auth.user.id,
+      changes: {
+        gstNumber: { old: client.gstNumber, new: nextClientGst },
+      },
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
+  }
+
   await createAuditLog({
     action: "CREATE",
     entity: "Invoice",
@@ -356,7 +426,7 @@ export async function GET(_req: Request) {
     where: centreId ? { centreId } : {},
     orderBy: { createdAt: "desc" },
     take: 100,
-    include: { client: { select: { firstName: true, lastName: true, clientCode: true } } },
+    include: { client: { select: { title: true, firstName: true, lastName: true, clientCode: true } } },
   });
 
   return NextResponse.json(
@@ -371,7 +441,7 @@ export async function GET(_req: Request) {
       createdAt: inv.createdAt.toISOString(),
       client: {
         code: inv.client.clientCode,
-        name: `${inv.client.firstName} ${inv.client.lastName}`,
+        name: formatPatientName(inv.client),
       },
     })),
   );

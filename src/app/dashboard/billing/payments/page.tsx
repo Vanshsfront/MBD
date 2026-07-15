@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDateTime } from "@/lib/date-format";
+import { formatPatientName } from "@/lib/patient-display";
 
 export const metadata = { title: "Payments — MBD Clinic OS" };
 
@@ -25,7 +27,7 @@ export default async function PaymentsPage() {
           invoiceNumber: true,
           status: true,
           totalAmount: true,
-          client: { select: { firstName: true, lastName: true, clientCode: true } },
+          client: { select: { title: true, firstName: true, lastName: true, clientCode: true } },
         },
       },
     },
@@ -58,7 +60,7 @@ export default async function PaymentsPage() {
                 <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-3">
                   <div>
                     <p className="text-sm font-medium">
-                      {p.invoice.client.firstName} {p.invoice.client.lastName}{" "}
+                      {formatPatientName(p.invoice.client)}{" "}
                       <span className="text-muted-foreground">({p.invoice.client.clientCode})</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
@@ -70,7 +72,7 @@ export default async function PaymentsPage() {
                       </Link>{" "}
                       · {p.method}
                       {p.reference ? ` · ${p.reference}` : ""} ·{" "}
-                      {new Date(p.paymentDate).toLocaleString("en-IN")}
+                      {formatClinicDateTime(p.paymentDate)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

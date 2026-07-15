@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDate, formatClinicDateTime } from "@/lib/date-format";
 
 export const metadata = { title: "Inventory item — MBD Clinic OS" };
 
@@ -100,7 +101,7 @@ export default async function InventoryItemDetailPage({
           <CardContent className="space-y-1.5 text-sm">
             <KV k="Log entries" v={String(logs.length)} />
             <KV k="Price changes" v={String(priceHistory.length)} />
-            <KV k="Created" v={item.createdAt.toLocaleDateString("en-IN")} />
+            <KV k="Created" v={formatClinicDate(item.createdAt)} />
           </CardContent>
         </Card>
       </div>
@@ -133,7 +134,7 @@ export default async function InventoryItemDetailPage({
                   {logs.map((l) => (
                     <tr key={l.id}>
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums">
-                        {l.createdAt.toLocaleString("en-IN", {
+                        {formatClinicDateTime(l.createdAt, {
                           day: "2-digit",
                           month: "short",
                           hour: "2-digit",
@@ -200,7 +201,7 @@ export default async function InventoryItemDetailPage({
                 {priceHistory.map((h) => (
                   <tr key={h.id}>
                     <td className="whitespace-nowrap px-3 py-2 tabular-nums">
-                      {h.effectiveFrom.toLocaleDateString("en-IN", {
+                      {formatClinicDate(h.effectiveFrom, {
                         day: "2-digit",
                         month: "short",
                         year: "numeric",

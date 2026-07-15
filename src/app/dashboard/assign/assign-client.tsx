@@ -588,9 +588,12 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
     rearm();
   }
 
-  function downloadConsent(format: "docx" | "pdf") {
-    const url = `/api/clients/${client.id}/consent-render?format=${format}`;
-    window.open(url, "_blank");
+  function downloadConsent() {
+    window.open(`/api/clients/${client.id}/consent-render`, "_blank");
+  }
+
+  function downloadTermsOfService() {
+    window.open("/api/legal-documents/terms-of-service/download", "_blank");
   }
 
   async function onScanFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
@@ -713,11 +716,11 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
             Render the prefilled consent form for the patient to read or sign on paper.
           </p>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => downloadConsent("docx")}>
-              Download DOCX
+            <Button size="sm" variant="outline" onClick={downloadConsent}>
+              Download consent form (Word)
             </Button>
-            <Button size="sm" variant="outline" onClick={() => downloadConsent("pdf")}>
-              Open PDF
+            <Button size="sm" variant="outline" onClick={downloadTermsOfService}>
+              Print full Terms of Service
             </Button>
           </div>
         </section>
@@ -777,7 +780,7 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
               />
             ) : null}
             {scanDataUrl && !scanDataUrl.startsWith("data:image") ? (
-              <p className="text-xs text-muted-foreground">PDF received and ready to upload.</p>
+              <p className="text-xs text-muted-foreground">Scan received and ready to upload.</p>
             ) : null}
           </section>
         )}
@@ -803,13 +806,13 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
                   className="h-4 w-4"
                 />
                 <span className="text-sm font-medium text-orange-900">
-                  I have obtained consent from the patient's parent/guardian
+                  I have obtained consent from the patient&apos;s parent/guardian
                 </span>
               </label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="guardian-name" className="text-sm">
-                    Guardian's full name
+                    Guardian&apos;s full name
                   </Label>
                   <Input
                     id="guardian-name"
@@ -836,7 +839,7 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
 
         {/* Two-stage flow per PRD §6.5 update:
             (1) FO clicks "Preview signed consent" — opens a new tab with
-                the rendered DOCX/PDF containing the captured signature.
+                the rendered DOCX containing the captured signature.
             (2) Once previewed, "Confirm & finalize" appears.
             This prevents accidental commit of a wrong/blank/wonky signature
             and gives the FO a chance to see the document end-to-end before

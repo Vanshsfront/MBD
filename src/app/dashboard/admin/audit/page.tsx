@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { nativeControlClass } from "@/lib/select-styles";
+import { formatClinicDate, formatClinicDateTime } from "@/lib/date-format";
 
 export const metadata = { title: "Audit log — MBD Clinic OS" };
 
@@ -126,7 +127,7 @@ export default async function AuditLogPage({
                   {rows.map((r) => (
                     <tr key={r.id} className="align-top">
                       <td className="px-3 py-2 tabular-nums">
-                        {r.createdAt.toLocaleString("en-IN", {
+                        {formatClinicDateTime(r.createdAt, {
                           day: "2-digit",
                           month: "short",
                           hour: "2-digit",
@@ -317,7 +318,7 @@ function humanizeValue(v: unknown): string {
     if (/^\d{4}-\d{2}-\d{2}T/.test(v)) {
       const d = new Date(v);
       if (!Number.isNaN(d.getTime())) {
-        return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+        return formatClinicDate(d, { day: "2-digit", month: "short", year: "numeric" });
       }
     }
     return v.length > 40 ? `${v.slice(0, 40)}…` : v;

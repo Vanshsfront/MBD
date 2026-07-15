@@ -11,6 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
 import { nativeControlClass } from "@/lib/select-styles";
+import { formatClinicDate } from "@/lib/date-format";
+import { formatPatientName } from "@/lib/patient-display";
 
 export const metadata = { title: "Packages — MBD Clinic OS" };
 
@@ -55,7 +57,7 @@ export default async function PackagesListPage({
     take: 200,
     include: {
       client: {
-        select: { id: true, firstName: true, lastName: true, clientCode: true },
+        select: { id: true, title: true, firstName: true, lastName: true, clientCode: true },
       },
       invoices: {
         select: { id: true, invoiceNumber: true, status: true, totalAmount: true },
@@ -144,7 +146,7 @@ export default async function PackagesListPage({
                             href={`/dashboard/patients/${p.client.id}/packages`}
                             className="hover:underline"
                           >
-                            {p.client.firstName} {p.client.lastName}
+                            {formatPatientName(p.client)}
                           </Link>{" "}
                           <span className="text-muted-foreground">
                             ({p.client.clientCode})
@@ -153,7 +155,7 @@ export default async function PackagesListPage({
                         <p className="text-xs text-muted-foreground">
                           {p.completedSessions}/{p.totalSessions} sessions used
                           {remaining > 0 ? ` · ${remaining} remaining` : ""} · valid till{" "}
-                          {p.validUntil.toLocaleDateString("en-IN", {
+                          {formatClinicDate(p.validUntil, {
                             day: "2-digit",
                             month: "short",
                             year: "numeric",

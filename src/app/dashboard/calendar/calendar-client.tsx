@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -37,6 +38,15 @@ import { WalkInAppointmentDialog } from "./walk-in-dialog";
 
 // How many therapist colours the legend shows before "Show all".
 const LEGEND_COLLAPSED_COUNT = 6;
+const HALF_HOUR_MS = 30 * 60_000;
+
+function nextHalfHourRange(): { start: string; end: string } {
+  const startMs = Math.ceil(Date.now() / HALF_HOUR_MS) * HALF_HOUR_MS;
+  return {
+    start: new Date(startMs).toISOString(),
+    end: new Date(startMs + HALF_HOUR_MS).toISOString(),
+  };
+}
 
 interface TherapistOption {
   id: string;
@@ -91,6 +101,8 @@ interface Props {
   canBook: boolean;
   /** False for Front Office — they book the slot, the therapist sets the service later. */
   canAssignService: boolean;
+  initialClientId?: string;
+  returnTo?: string;
   therapists: TherapistOption[];
   services: ServiceOption[];
   clients: ClientOption[];
@@ -101,6 +113,8 @@ export function CalendarClient({
   isClinicalRole,
   canBook,
   canAssignService,
+  initialClientId = "",
+  returnTo,
   therapists,
   services,
   clients,
@@ -111,8 +125,16 @@ export function CalendarClient({
   );
   const [creating, setCreating] = useState<{ start: string; end: string } | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [walkInFallbackRange, setWalkInFallbackRange] = useState(nextHalfHourRange);
   const [selectedEvent, setSelectedEvent] = useState<AppointmentEvent | null>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  const [lastSavedPatientId, setLastSavedPatientId] = useState<string | null>(null);
+
+  function patientHref(clientId: string): string {
+    const base = `/dashboard/patients/${clientId}`;
+    if (returnTo === base || returnTo?.startsWith(`${base}/`)) return returnTo;
+    return base;
+  }
 
   function fetchEvents(start: Date, end: Date) {
     const params = new URLSearchParams({ from: start.toISOString(), to: end.toISOString() });
@@ -177,6 +199,8 @@ export function CalendarClient({
       }
       const data = (await res.json().catch(() => ({}))) as { warning?: string };
       toast.success("Appointment moved");
+      const movedClientId = info.event.extendedProps.clientId as string | undefined;
+      if (movedClientId) setLastSavedPatientId(movedClientId);
       if (data.warning) toast.warning(data.warning);
     } catch (err) {
       info.revert();
@@ -232,7 +256,14 @@ export function CalendarClient({
               {/* Walk-in is FO-only: clinical roles never see the intake-
                   pending flow. */}
               {!isClinicalRole ? (
-                <Button onClick={() => setWalkInOpen(true)} size="sm" variant="outline">
+                <Button
+                  onClick={() => {
+                    setWalkInFallbackRange(nextHalfHourRange());
+                    setWalkInOpen(true);
+                  }}
+                  size="sm"
+                  variant="outline"
+                >
                   Walk-in (intake pending)
                 </Button>
               ) : null}
@@ -243,6 +274,18 @@ export function CalendarClient({
           ) : null}
         </div>
       </header>
+
+      {lastSavedPatientId ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
+          <span className="font-medium text-emerald-900">Appointment saved.</span>
+          <Link
+            href={patientHref(lastSavedPatientId)}
+            className="inline-flex items-center rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-100"
+          >
+            Back to patient
+          </Link>
+        </div>
+      ) : null}
 
       {/* Status legend — explains the modifiers that ride on top of the
         * per-therapist colour (events themselves are tinted by therapist,
@@ -345,14 +388,8 @@ export function CalendarClient({
       <WalkInAppointmentDialog
         open={walkInOpen}
         onOpenChange={setWalkInOpen}
-        startIso={
-          creating?.start ??
-          new Date(Math.ceil(Date.now() / (30 * 60_000)) * (30 * 60_000)).toISOString()
-        }
-        endIso={
-          creating?.end ??
-          new Date(Math.ceil(Date.now() / (30 * 60_000)) * (30 * 60_000) + 30 * 60_000).toISOString()
-        }
+        startIso={creating?.start ?? walkInFallbackRange.start}
+        endIso={creating?.end ?? walkInFallbackRange.end}
         therapists={therapists.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
         onCreated={() => calendarRef.current?.getApi().refetchEvents()}
       />
@@ -365,8 +402,10 @@ export function CalendarClient({
           therapists={therapists}
           services={services}
           clients={clients}
-          onClose={(refreshed) => {
+          initialClientId={initialClientId}
+          onClose={(refreshed, savedClientId) => {
             setCreating(null);
+            if (refreshed && savedClientId) setLastSavedPatientId(savedClientId);
             if (refreshed) calendarRef.current?.getApi().refetchEvents();
           }}
         />
@@ -376,8 +415,10 @@ export function CalendarClient({
         <EventDetailDialog
           event={selectedEvent}
           canEdit={canBook}
-          onClose={(refreshed) => {
+          backHref={patientHref(selectedEvent.clientId)}
+          onClose={(refreshed, savedClientId) => {
             setSelectedEvent(null);
+            if (refreshed && savedClientId) setLastSavedPatientId(savedClientId);
             if (refreshed) calendarRef.current?.getApi().refetchEvents();
           }}
         />
@@ -653,6 +694,7 @@ function CreateAppointmentDialog({
   therapists,
   services,
   clients,
+  initialClientId,
   onClose,
 }: {
   start: string;
@@ -661,9 +703,12 @@ function CreateAppointmentDialog({
   therapists: TherapistOption[];
   services: ServiceOption[];
   clients: ClientOption[];
-  onClose: (refreshed: boolean) => void;
+  initialClientId?: string;
+  onClose: (refreshed: boolean, savedClientId?: string) => void;
 }) {
-  const [clientId, setClientId] = useState<string>("");
+  const [clientId, setClientId] = useState<string>(
+    initialClientId && clients.some((c) => c.id === initialClientId) ? initialClientId : "",
+  );
   const [therapistId, setTherapistId] = useState<string>("");
   const [serviceId, setServiceId] = useState<string>("");
   const [notes, setNotes] = useState("");
@@ -671,7 +716,10 @@ function CreateAppointmentDialog({
   const [topTherapists, setTopTherapists] = useState<TopTherapist[]>([]);
   const [activePackages, setActivePackages] = useState<ActivePackage[]>([]);
   const [consumeFromPackageId, setConsumeFromPackageId] = useState<string | null>(null);
-  const [addAssignmentConfirmed, setAddAssignmentConfirmed] = useState<boolean | null>(null);
+  const [addAssignmentDecision, setAddAssignmentDecision] = useState<{
+    key: string;
+    value: boolean;
+  } | null>(null);
   // Editable date/time/duration so the FO can adjust the seeded slot.
   const [startLocal, setStartLocal] = useState(() => toLocalInput(start));
   const [durationMin, setDurationMin] = useState(() => {
@@ -734,13 +782,11 @@ function CreateAppointmentDialog({
     return c?.therapistIds.includes(therapistId) ?? false;
   }, [clientId, therapistId, clients]);
 
-  // Reset the add-to-plan confirmation whenever the patient or therapist
-  // changes. Without this the prior choice carries over visually ("Yes" stays
-  // highlighted) and can submit a stale answer for a different therapist —
-  // the bug behind "add doctor → add to care plan" reports.
-  useEffect(() => {
-    setAddAssignmentConfirmed(null);
-  }, [clientId, therapistId]);
+  const addAssignmentDecisionKey = `${clientId}:${therapistId}`;
+  const addAssignmentConfirmed =
+    addAssignmentDecision?.key === addAssignmentDecisionKey
+      ? addAssignmentDecision.value
+      : null;
 
   const servicesByDepartment = useMemo(() => {
     const t = therapists.find((x) => x.id === therapistId);
@@ -830,7 +876,7 @@ function CreateAppointmentDialog({
       if (data.addedAssignment) {
         toast.success("Therapist added to patient's plan");
       }
-      onClose(true);
+      onClose(true, clientId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Book failed");
     } finally {
@@ -940,7 +986,7 @@ function CreateAppointmentDialog({
                   type="button"
                   size="sm"
                   variant={addAssignmentConfirmed === true ? "default" : "outline"}
-                  onClick={() => setAddAssignmentConfirmed(true)}
+                  onClick={() => setAddAssignmentDecision({ key: addAssignmentDecisionKey, value: true })}
                 >
                   Yes, add
                 </Button>
@@ -948,7 +994,7 @@ function CreateAppointmentDialog({
                   type="button"
                   size="sm"
                   variant={addAssignmentConfirmed === false ? "default" : "outline"}
-                  onClick={() => setAddAssignmentConfirmed(false)}
+                  onClick={() => setAddAssignmentDecision({ key: addAssignmentDecisionKey, value: false })}
                 >
                   No, just this booking
                 </Button>
@@ -1099,11 +1145,13 @@ const CANCELLATION_CATEGORY_LABELS: Record<string, string> = {
 function EventDetailDialog({
   event,
   canEdit,
+  backHref,
   onClose,
 }: {
   event: AppointmentEvent;
   canEdit: boolean;
-  onClose: (refreshed: boolean) => void;
+  backHref: string;
+  onClose: (refreshed: boolean, savedClientId?: string) => void;
 }) {
   const [pending, setPending] = useState(false);
   const [reason, setReason] = useState("");
@@ -1130,7 +1178,7 @@ function EventDetailDialog({
         throw new Error(await readApiError(res, { fallback: "Couldn't cancel the appointment." }));
       }
       toast.success("Appointment cancelled");
-      onClose(true);
+      onClose(true, event.clientId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Cancel failed");
     } finally {
@@ -1150,7 +1198,7 @@ function EventDetailDialog({
         throw new Error(await readApiError(res, { fallback: "Couldn't mark as no-show." }));
       }
       toast.success("Marked as no-show");
-      onClose(true);
+      onClose(true, event.clientId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No-show failed");
     } finally {
@@ -1175,7 +1223,7 @@ function EventDetailDialog({
         throw new Error(await readApiError(res, { fallback: "Couldn't delete the appointment." }));
       }
       toast.success("Appointment deleted");
-      onClose(true);
+      onClose(true, event.clientId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -1280,6 +1328,9 @@ function EventDetailDialog({
       ) : null}
         </div>
         <DialogFooter className="flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href={backHref}>Back to patient</Link>
+          </Button>
           <Button variant="outline" onClick={() => onClose(false)}>
             Close
           </Button>

@@ -12,6 +12,7 @@ import {
   type DocxTemplateKey,
 } from "@/lib/templates/keys";
 import { phiHeaders } from "@/lib/responses";
+import { formatClinicDate } from "@/lib/date-format";
 
 export async function GET(
   _req: Request,
@@ -144,7 +145,7 @@ function extract<T>(
 }
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-IN", {
+  return formatClinicDate(d, {
     day: "2-digit",
     month: "short",
     year: "numeric",

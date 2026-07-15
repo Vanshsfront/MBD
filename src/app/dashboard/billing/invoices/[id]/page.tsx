@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDateTime } from "@/lib/date-format";
+import { formatPatientName } from "@/lib/patient-display";
 import { RecordPaymentForm } from "./record-payment-form";
 import { SharePortalButton } from "@/app/dashboard/patients/[id]/share-portal-button";
 
@@ -61,9 +63,9 @@ export default async function InvoiceDetailPage({
               href={`/dashboard/patients/${invoice.clientId}`}
               className="underline-offset-4 hover:underline"
             >
-              {invoice.client.firstName} {invoice.client.lastName} ({invoice.client.clientCode})
+              {formatPatientName(invoice.client)} ({invoice.client.clientCode})
             </Link>{" "}
-            · {invoice.invoiceFlavor} · {new Date(invoice.createdAt).toLocaleString("en-IN")}
+            · {invoice.invoiceFlavor} · {formatClinicDateTime(invoice.createdAt)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -161,10 +163,22 @@ export default async function InvoiceDetailPage({
                   ) : null}
                   <tr>
                     <td colSpan={5} className="px-4 py-2 text-right text-xs uppercase tracking-wide text-muted-foreground">
-                      GST
+                      GST total
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">{formatINR(invoice.totalGst)}</td>
                   </tr>
+                  {invoice.cgstAmount > 0 || invoice.sgstAmount > 0 || invoice.igstAmount > 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-2 text-right text-xs uppercase tracking-wide text-muted-foreground">
+                        GST split
+                      </td>
+                      <td className="px-4 py-2 text-right text-xs tabular-nums text-muted-foreground">
+                        {invoice.cgstAmount > 0 || invoice.sgstAmount > 0
+                          ? `CGST ${formatINR(invoice.cgstAmount)} · SGST ${formatINR(invoice.sgstAmount)}`
+                          : `IGST ${formatINR(invoice.igstAmount)}`}
+                      </td>
+                    </tr>
+                  ) : null}
                   <tr className="font-medium">
                     <td colSpan={5} className="px-4 py-3 text-right">
                       Total
@@ -216,7 +230,7 @@ export default async function InvoiceDetailPage({
                       <div>
                         <p>{p.method}</p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(p.paymentDate).toLocaleString("en-IN")}
+                          {formatClinicDateTime(p.paymentDate)}
                           {p.reference ? ` · ${p.reference}` : ""}
                         </p>
                       </div>

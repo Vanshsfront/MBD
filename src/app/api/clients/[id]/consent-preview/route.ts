@@ -14,12 +14,9 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/api-auth";
 import { renderDocxTemplate } from "@/lib/templates/docx";
 import { CATEGORY_KEYS, type ServiceCategoryKey } from "@/lib/categories";
-
-interface AddressJson {
-  line1?: string;
-  city?: string;
-  pincode?: string;
-}
+import { formatAddress, parseAddress } from "@/lib/address";
+import { formatPatientName } from "@/lib/patient-display";
+import { formatClinicDate, formatClinicTime } from "@/lib/date-format";
 
 interface EmergencyJson {
   name?: string;
@@ -28,7 +25,7 @@ interface EmergencyJson {
 }
 
 const bodySchema = z.object({
-  signatureDataUrl: z.string().min(1).max(5_000_000),
+  signatureDataUrl: z.string().min(1).max(11 * 1024 * 1024),
   method: z.enum(["DIGITAL_PAD", "PHYSICAL_SCAN"]).optional(),
 });
 
@@ -68,13 +65,24 @@ export async function POST(
 
 
   const intake = client.intakeForms[0] ?? null;
+  const termsDocument = intake?.termsOfServiceVersion
+    ? await prisma.legalDocument.findUnique({
+        where: {
+          key_version: {
+            key: "TERMS_OF_SERVICE",
+            version: intake.termsOfServiceVersion,
+          },
+        },
+        select: { effectiveDate: true },
+      })
+    : null;
   const selected = parseSelectedCategories(intake?.selectedCategories ?? null);
   // Match the persisted render: ticked-only, no empty boxes.
   const checkboxMap: Record<string, string> = {};
   for (const k of CATEGORY_KEYS) checkboxMap[k] = selected.includes(k) ? "☑" : "";
 
   const othersText = parseOthersText(intake?.formData ?? null);
-  const address = client.address ? (JSON.parse(client.address) as AddressJson) : {};
+  const address = parseAddress(client.address);
   const emergency = client.emergencyContact
     ? (JSON.parse(client.emergencyContact) as EmergencyJson)
     : {};
@@ -82,19 +90,29 @@ export async function POST(
   const assignedNames = client.doctorAssignments
     .map((a) => a.staff?.name)
     .filter((n): n is string => !!n);
-  const fullAddress = [address.line1, address.city, address.pincode].filter(Boolean).join(", ");
+  const fullAddress = formatAddress(address);
 
   const data = {
     visitDate: formatDate(intake?.createdAt ?? client.createdAt),
     visitTime: formatTime(intake?.createdAt ?? client.createdAt),
     patient: {
-      name: `${client.firstName} ${client.lastName}`.trim(),
+      name: formatPatientName(client),
       dob: client.dob ? formatDate(client.dob) : "",
       age: client.age != null ? String(client.age) : "",
       sex: client.sex ?? "",
       phone: client.phone,
       email: client.email ?? "",
       address: fullAddress,
+    },
+    termsOfService: {
+      agreed: intake?.termsOfServiceAgreed ? "Yes" : "No",
+      version: intake?.termsOfServiceVersion ?? "",
+      agreedAt: intake?.termsOfServiceAgreedAt ? formatDate(intake.termsOfServiceAgreedAt) : "",
+      acknowledgement: intake?.termsOfServiceAgreed
+        ? `Patient has agreed to Terms of Service v${intake.termsOfServiceVersion ?? ""}, effective ${
+            termsDocument?.effectiveDate ? formatDate(termsDocument.effectiveDate) : ""
+          }, acknowledged ${intake.termsOfServiceAgreedAt ? formatDate(intake.termsOfServiceAgreedAt) : ""}.`
+        : "Terms of Service agreement is not recorded.",
     },
     emergency: {
       name: emergency.name ?? "",
@@ -153,11 +171,9 @@ function parseOthersText(json: string | null): string {
 }
 
 function formatDate(d: Date): string {
-  const day = d.getDate().toString().padStart(2, "0");
-  const month = d.toLocaleString("en-IN", { month: "short" });
-  return `${day} ${month} ${d.getFullYear()}`;
+  return formatClinicDate(d, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function formatTime(d: Date): string {
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  return formatClinicTime(d, { hour: "2-digit", minute: "2-digit", hour12: true });
 }

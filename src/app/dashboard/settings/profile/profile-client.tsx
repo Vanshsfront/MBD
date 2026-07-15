@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { mapApiError, readApiError } from "@/lib/error-messages";
+import { readApiError } from "@/lib/error-messages";
 
 interface Props {
   name: string;
@@ -53,9 +53,6 @@ export function ProfileView(props: Props) {
         <ChangePasswordCard />
       </div>
 
-      <AttendanceCard />
-
-
       <SignatureCard
         hasSignature={props.hasSignature}
         signatureDataUrl={props.signatureDataUrl}
@@ -70,87 +67,6 @@ function KV({ k, v }: { k: string; v: React.ReactNode }) {
       <span className="text-xs uppercase tracking-wide text-muted-foreground">{k}</span>
       <span className="text-right">{v}</span>
     </div>
-  );
-}
-
-function AttendanceCard() {
-  const [pending, setPending] = useState<"CHECK_IN" | "CHECK_OUT" | null>(null);
-  const [lastEvent, setLastEvent] = useState<{ type: "CHECK_IN" | "CHECK_OUT"; at: string } | null>(
-    null,
-  );
-
-  async function record(type: "CHECK_IN" | "CHECK_OUT") {
-    setPending(type);
-    try {
-      const res = await fetch("/api/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
-      });
-      const j = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string; at?: string }
-        | null;
-      if (res.status === 409) {
-        toast.message(`Already ${type === "CHECK_IN" ? "checked in" : "checked out"} today.`);
-        return;
-      }
-      if (!res.ok || !j?.ok) {
-        throw new Error(mapApiError(j, { fallback: "Couldn't record attendance." }));
-      }
-      const now = new Date(j.at ?? new Date().toISOString());
-      setLastEvent({ type, at: now.toISOString() });
-      toast.success(
-        `${type === "CHECK_IN" ? "Checked in" : "Checked out"} at ${now.toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        })}`,
-      );
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Attendance failed");
-    } finally {
-      setPending(null);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Attendance</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Tap once when you arrive and once when you leave. Visible to admins on the Attendance page.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            onClick={() => record("CHECK_IN")}
-            disabled={pending !== null}
-          >
-            {pending === "CHECK_IN" ? "Checking in…" : "Check in"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => record("CHECK_OUT")}
-            disabled={pending !== null}
-          >
-            {pending === "CHECK_OUT" ? "Checking out…" : "Check out"}
-          </Button>
-          {lastEvent ? (
-            <span className="text-xs text-muted-foreground">
-              Last: {lastEvent.type.replace("_", " ").toLowerCase()} at{" "}
-              {new Date(lastEvent.at).toLocaleTimeString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              })}
-            </span>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

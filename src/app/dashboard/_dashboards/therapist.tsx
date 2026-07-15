@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import type { Role } from "@/lib/permissions";
+import { formatClinicDate, formatClinicTime } from "@/lib/date-format";
 
 export async function TherapistDashboard({
   currentUserId,
@@ -480,7 +481,7 @@ function UtilRow({
 }
 
 function formatTime(d: Date): string {
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatClinicTime(d, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function formatRelative(d: Date, now: Date): string {
@@ -493,7 +494,7 @@ function formatRelative(d: Date, now: Date): string {
   const days = Math.round(h / 24);
   if (days === 1) return "yesterday";
   if (days < 7) return `${days}d`;
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  return formatClinicDate(d, { day: "2-digit", month: "short" });
 }
 
 function firstName(s: string): string {
@@ -504,4 +505,3 @@ function firstName(s: string): string {
   while (i < parts.length - 1 && /^(dr|mr|mrs|ms|prof|miss)\.?$/i.test(parts[i]!)) i++;
   return parts[i] ?? s;
 }
-

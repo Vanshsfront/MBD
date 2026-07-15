@@ -56,8 +56,9 @@ const MESSAGES: Record<string, MessageFactory> = {
   parse_failed: "We couldn't read the uploaded file. Try a different format.",
   expected_multipart: "Upload a file using the file picker — direct JSON isn't supported.",
   file_required: "Please select a file to upload.",
-  file_too_large: "That file is too large. Use one under 4 MB.",
-  signature_too_large: "The signature image is too large. Have the patient sign again.",
+  file_too_large: "That file is too large. Use one under 10 MB.",
+  signature_too_large:
+    "The signature or scan is too large. Use a compressed image under 10 MB.",
   unknown_template: "That clinical template isn't recognised.",
   no_active_centre: "Select a centre before continuing.",
   centre_not_found: "That centre doesn't exist.",
@@ -117,6 +118,8 @@ const MESSAGES: Record<string, MessageFactory> = {
   session_not_found: "Session not found.",
   session_not_yours: "You don't own this session.",
   already_logged_today: "Already logged for today.",
+  attendance_self_service_disabled:
+    "Attendance can only be recorded from the clinic biometric device.",
 
   // Inventory
   inventory_item_not_found: "Inventory item not found.",
@@ -134,6 +137,16 @@ const MESSAGES: Record<string, MessageFactory> = {
   invoice_not_found: "Invoice not found.",
   invoice_cancelled: "This invoice was cancelled — no further payments can be recorded.",
   service_not_found: "Service not found.",
+  client_state_required_for_gst:
+    "Add the patient's state in demographics before creating an invoice.",
+  centre_state_required_for_gst:
+    "Add the clinic's state in admin clinic settings before creating an invoice.",
+  consultant_required_for_package_invoice:
+    "Pick a consultant for every package service, or link a consultation.",
+  consultant_not_found_or_inactive:
+    "One selected consultant is inactive or no longer exists. Pick another consultant.",
+  invoice_template_line_limit:
+    "This invoice has too many line items for the template. Split it into two invoices.",
 
   // Admin / data
   code_taken: "That code is already in use.",
@@ -153,12 +166,17 @@ function formatWindow(start: unknown, end: unknown): string {
     const e = new Date(end);
     if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return "";
     const dayFmt = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
       day: "2-digit",
       month: "short",
       hour: "2-digit",
       minute: "2-digit",
     });
-    const timeFmt = new Intl.DateTimeFormat("en-IN", { hour: "2-digit", minute: "2-digit" });
+    const timeFmt = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     return ` ${dayFmt.format(s)}–${timeFmt.format(e)}`;
   } catch {
     return "";

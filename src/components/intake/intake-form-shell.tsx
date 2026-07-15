@@ -20,6 +20,7 @@ import { DateField } from "@/components/ui/date-field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/lib/categories";
 import { TermsModal } from "@/components/intake/terms-modal";
+import { PATIENT_TITLES } from "@/lib/patient-display";
 
 export type IntakeSex = "" | "M" | "F" | "OTHER";
 // Hand dominance — propagated to physiotherapy / S&C / FAB templates via
@@ -28,6 +29,7 @@ export type IntakeSex = "" | "M" | "F" | "OTHER";
 export type IntakeDominance = "" | "RIGHT" | "LEFT" | "AMBI";
 
 export interface IntakeFormState {
+  title: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -39,6 +41,7 @@ export interface IntakeFormState {
   sport: string;
   addressLine1: string;
   addressCity: string;
+  addressState: string;
   addressPincode: string;
   emergencyName: string;
   emergencyPhone: string;
@@ -55,6 +58,7 @@ export interface IntakeFormState {
 export type IntakeFieldErrors = Partial<Record<keyof IntakeFormState, string>>;
 
 export const INITIAL_INTAKE_FORM: IntakeFormState = {
+  title: "",
   firstName: "",
   lastName: "",
   email: "",
@@ -66,6 +70,7 @@ export const INITIAL_INTAKE_FORM: IntakeFormState = {
   sport: "",
   addressLine1: "",
   addressCity: "Mumbai",
+  addressState: "Maharashtra",
   addressPincode: "",
   emergencyName: "",
   emergencyPhone: "",
@@ -80,6 +85,7 @@ export const INITIAL_INTAKE_FORM: IntakeFormState = {
 };
 
 export type IntakePayload = {
+  title?: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -92,6 +98,7 @@ export type IntakePayload = {
   sport?: string;
   addressLine1: string;
   addressCity: string;
+  addressState: string;
   addressPincode: string;
   emergencyName: string;
   emergencyPhone: string;
@@ -130,6 +137,7 @@ function validatePage(form: IntakeFormState, page: Page): IntakeFieldErrors {
     if (!form.sex) errs.sex = "Sex is required.";
     if (!form.addressLine1.trim()) errs.addressLine1 = "Address is required.";
     if (!form.addressCity.trim()) errs.addressCity = "City is required.";
+    if (!form.addressState.trim()) errs.addressState = "State is required.";
     if (!form.addressPincode.trim()) errs.addressPincode = "Pincode is required.";
     else if (!/^\d{6}$/.test(form.addressPincode.trim()))
       errs.addressPincode = "Pincode must be 6 digits.";
@@ -177,6 +185,7 @@ function ageFromDob(dobStr: string): string {
 
 function buildPayload(form: IntakeFormState, computedAge: string): IntakePayload {
   return {
+    title: form.title.trim() || undefined,
     firstName: form.firstName.trim(),
     lastName: form.lastName.trim(),
     email: form.email.trim(),
@@ -189,6 +198,7 @@ function buildPayload(form: IntakeFormState, computedAge: string): IntakePayload
     sport: form.sport.trim() || undefined,
     addressLine1: form.addressLine1.trim(),
     addressCity: form.addressCity.trim(),
+    addressState: form.addressState.trim(),
     addressPincode: form.addressPincode.trim(),
     emergencyName: form.emergencyName.trim(),
     emergencyPhone: form.emergencyPhone.trim(),
@@ -246,8 +256,11 @@ export function IntakeFormShell({
     }
   }
 
-  function blur<K extends keyof IntakeFormState>(key: K) {
-    const fresh = validatePage(form, page);
+  function blur<K extends keyof IntakeFormState>(key: K, value?: IntakeFormState[K]) {
+    const fresh = validatePage(
+      value === undefined ? form : { ...form, [key]: value },
+      page,
+    );
     setErrors((prev) => ({ ...prev, [key]: fresh[key] ?? "" }));
   }
 
@@ -276,6 +289,7 @@ export function IntakeFormShell({
     }
     setShowAllErrors(false);
     setPage(2);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "instant" });
   }
 
   async function trySubmit() {
@@ -383,7 +397,7 @@ function PageOne({
   blur,
   computedAge,
 }: PageProps & {
-  blur: <K extends keyof IntakeFormState>(key: K) => void;
+  blur: <K extends keyof IntakeFormState>(key: K, value?: IntakeFormState[K]) => void;
   computedAge: string;
 }) {
   return (
@@ -393,6 +407,21 @@ function PageOne({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Title">
+            <select
+              value={form.title}
+              onChange={(e) => update("title", e.target.value)}
+              aria-label="Patient title"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            >
+              <option value="">Select…</option>
+              {PATIENT_TITLES.map((title) => (
+                <option key={title} value={title}>
+                  {title}.
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="First name *" error={errors.firstName}>
             <Input
               value={form.firstName}
@@ -436,7 +465,7 @@ function PageOne({
               value={form.dob}
               onChange={(v) => {
                 update("dob", v);
-                blur("dob");
+                blur("dob", v);
               }}
               max={new Date().toISOString().slice(0, 10)}
               invalid={Boolean(errors.dob)}
@@ -507,13 +536,22 @@ function PageOne({
               required
             />
           </Field>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="City *" error={errors.addressCity}>
               <Input
                 value={form.addressCity}
                 onChange={(e) => update("addressCity", e.target.value)}
                 onBlur={() => blur("addressCity")}
                 aria-invalid={Boolean(errors.addressCity)}
+                required
+              />
+            </Field>
+            <Field label="State *" error={errors.addressState}>
+              <Input
+                value={form.addressState}
+                onChange={(e) => update("addressState", e.target.value)}
+                onBlur={() => blur("addressState")}
+                aria-invalid={Boolean(errors.addressState)}
                 required
               />
             </Field>
@@ -619,8 +657,7 @@ function PageTwo({
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            Please confirm the patient has read and accepts these terms. The full text is in the
-            consent form they will sign at the front desk.
+            Please confirm the patient has read and accepts these terms. The full Terms of Service must be opened and scrolled before agreement.
           </p>
           <Acknowledgement
             checked={form.consent}
@@ -646,7 +683,7 @@ function PageTwo({
             onChange={(v) => update("cancellationPolicy", v)}
             label="Patient acknowledges the cancellation policy: ≥4 hours' notice, or by 8 PM the previous day for morning slots."
           />
-          {/* 5th ack — full T&C, opened in-place via the link. */}
+          {/* 5th ack — full Terms of Service, opened in-place via the link. */}
           <div className="space-y-1">
             <label
               className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-accent ${
@@ -656,8 +693,12 @@ function PageTwo({
               <input
                 type="checkbox"
                 checked={form.agreedToTerms}
-                onChange={(e) => update("agreedToTerms", e.target.checked)}
+                onChange={() => {
+                  if (form.agreedToTerms) update("agreedToTerms", false);
+                  else setTermsOpen(true);
+                }}
                 className="mt-0.5 h-4 w-4"
+                readOnly
               />
               <span className="text-sm">
                 I agree to the{" "}
@@ -670,7 +711,7 @@ function PageTwo({
                     setTermsOpen(true);
                   }}
                 >
-                  terms and conditions
+                  Terms of Service
                 </button>
                 .
               </span>
@@ -681,7 +722,12 @@ function PageTwo({
           </div>
         </CardContent>
       </Card>
-      <TermsModal open={termsOpen} onOpenChange={setTermsOpen} />
+      <TermsModal
+        open={termsOpen}
+        onOpenChange={setTermsOpen}
+        agreed={form.agreedToTerms}
+        onAgree={() => update("agreedToTerms", true)}
+      />
     </div>
   );
 }

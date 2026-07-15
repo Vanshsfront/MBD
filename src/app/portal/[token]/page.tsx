@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDate, formatClinicDateTime } from "@/lib/date-format";
 import { ProformaSection } from "./proforma-section";
 
 export const metadata = {
@@ -42,7 +43,7 @@ export default async function ClientPortalPage({
   if (row.expiresAt < new Date()) {
     return (
       <PortalRefused
-        reason={`This link expired on ${row.expiresAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}. Ask the front office for a fresh one.`}
+        reason={`This link expired on ${formatClinicDate(row.expiresAt, { day: "2-digit", month: "short", year: "numeric" })}. Ask the front office for a fresh one.`}
       />
     );
   }
@@ -91,7 +92,7 @@ export default async function ClientPortalPage({
             {data.nextAppointment ? (
               <div className="space-y-1 text-sm">
                 <p className="text-base font-medium">
-                  {new Date(data.nextAppointment.startIso).toLocaleString("en-IN", {
+                  {formatClinicDateTime(data.nextAppointment.startIso, {
                     weekday: "long",
                     day: "2-digit",
                     month: "short",
@@ -136,7 +137,7 @@ export default async function ClientPortalPage({
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {p.remaining} remaining · valid till{" "}
-                          {validUntil.toLocaleDateString("en-IN", {
+                          {formatClinicDate(validUntil, {
                             day: "2-digit",
                             month: "short",
                             year: "numeric",
@@ -172,7 +173,7 @@ export default async function ClientPortalPage({
                     <div>
                       <p className="font-mono font-medium">{inv.invoiceNumber}</p>
                       <p className="text-xs text-muted-foreground">
-                        {inv.flavor} · {new Date(inv.createdAt).toLocaleDateString("en-IN")}
+                        {inv.flavor} · {formatClinicDate(inv.createdAt)}
                         {inv.outstanding > 0
                           ? ` · ${formatINR(inv.outstanding)} outstanding`
                           : ""}

@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FlagBadges } from "@/components/flag-badges";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDateTime } from "@/lib/date-format";
+import { formatPatientName } from "@/lib/patient-display";
 import { PatientsFilterBar } from "./patients-filter-bar";
 
 export const metadata = { title: "Patients — MBD Clinic OS" };
@@ -209,7 +211,7 @@ export default async function PatientsPage({
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-semibold text-foreground">
-                              {c.firstName} {c.lastName}
+                              {formatPatientName(c)}
                             </span>
                             <span className="block text-[11px] text-[color:var(--text-tertiary)]">
                               {c.age != null ? <span>{c.age} </span> : null}
@@ -289,7 +291,7 @@ export default async function PatientsPage({
 }
 
 function formatApptDate(d: Date): string {
-  return d.toLocaleString("en-IN", {
+  return formatClinicDateTime(d, {
     day: "2-digit",
     month: "short",
     hour: "2-digit",

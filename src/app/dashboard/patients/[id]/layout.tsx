@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { FlagBadges } from "@/components/flag-badges";
 import { AccessBlocked } from "./access-blocked";
 import { PatientSubTabs } from "./patient-sub-tabs";
+import { formatPatientName } from "@/lib/patient-display";
 
 export default async function PatientLayout({
   children,
@@ -24,6 +25,7 @@ export default async function PatientLayout({
     select: {
       firstName: true,
       lastName: true,
+      title: true,
       clientCode: true,
       status: true,
       age: true,
@@ -104,7 +106,7 @@ export default async function PatientLayout({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <h1 className="truncate text-xl font-semibold tracking-tight">
-                {client.firstName} {client.lastName}
+                {formatPatientName(client)}
               </h1>
               <Badge variant={client.status === "ACTIVE" ? "success" : "default"}>
                 {client.status}

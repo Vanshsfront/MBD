@@ -17,7 +17,7 @@ const consentSchema = z.object({
   guardianRelationship: z.string().optional(),
 });
 
-const MAX_BYTES = 4 * 1024 * 1024; // 4 MB cap on the data URL
+const MAX_BYTES = 11 * 1024 * 1024; // ≈8 MB raw image after base64 overhead
 
 export async function POST(
   req: Request,

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatINR } from "@/lib/utils";
 import type { Role } from "@/lib/permissions";
+import { formatClinicDate, formatClinicTime } from "@/lib/date-format";
 
 export async function OwnerDashboard({
   userName,
@@ -514,11 +515,11 @@ function daysInMonth(year: number, month: number): number {
 }
 
 function formatShortDate(d: Date): string {
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  return formatClinicDate(d, { day: "2-digit", month: "short" });
 }
 
 function formatTime(d: Date): string {
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatClinicTime(d, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function renderPaid(paid: number, billed: number): React.ReactNode {

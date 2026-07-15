@@ -8,6 +8,7 @@ import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { activeCentreId } from "@/lib/centre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatClinicDate, formatClinicTime } from "@/lib/date-format";
 
 export const metadata = { title: "Attendance — MBD Clinic OS" };
 
@@ -63,7 +64,7 @@ export default async function AttendancePage() {
         <h1 className="text-2xl font-semibold tracking-tight">Attendance</h1>
         <p className="text-sm text-muted-foreground">
           Last {DAYS_BACK} days. Each cell shows check-in (top) and check-out (bottom) time.
-          Staff record their own via the Profile page.
+          Attendance is recorded from the clinic biometric feed.
         </p>
       </header>
 
@@ -81,9 +82,9 @@ export default async function AttendancePage() {
                   <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left">Staff</th>
                   {days.map((d) => (
                     <th key={d.toISOString()} className="whitespace-nowrap px-2 py-2 text-center">
-                      <div>{d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</div>
+                      <div>{formatClinicDate(d, { day: "2-digit", month: "short" })}</div>
                       <div className="text-[10px] font-normal opacity-70">
-                        {d.toLocaleDateString("en-IN", { weekday: "short" })}
+                        {formatClinicDate(d, { weekday: "short" })}
                       </div>
                     </th>
                   ))}
@@ -119,7 +120,7 @@ export default async function AttendancePage() {
                               <div className="space-y-0.5">
                                 <div className="text-emerald-600 dark:text-emerald-400">
                                   {cell.checkIn
-                                    ? cell.checkIn.toLocaleTimeString("en-IN", {
+                                    ? formatClinicTime(cell.checkIn, {
                                         hour: "2-digit",
                                         minute: "2-digit",
                                         hour12: false,
@@ -128,7 +129,7 @@ export default async function AttendancePage() {
                                 </div>
                                 <div className="text-rose-600 dark:text-rose-400">
                                   {cell.checkOut
-                                    ? cell.checkOut.toLocaleTimeString("en-IN", {
+                                    ? formatClinicTime(cell.checkOut, {
                                         hour: "2-digit",
                                         minute: "2-digit",
                                         hour12: false,

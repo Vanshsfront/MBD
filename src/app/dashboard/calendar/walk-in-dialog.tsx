@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { PhoneField, validatePhone } from "@/components/ui/phone-field";
 import { readApiError } from "@/lib/error-messages";
+import { PATIENT_TITLES } from "@/lib/patient-display";
 
 interface TherapistOption {
   id: string;
@@ -73,6 +74,7 @@ export function WalkInAppointmentDialog({
   onCreated,
 }: Props) {
   const [firstName, setFirstName] = useState("");
+  const [title, setTitle] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [therapistId, setTherapistId] = useState(therapists[0]?.id ?? "");
@@ -82,6 +84,7 @@ export function WalkInAppointmentDialog({
 
   function close() {
     if (pending) return;
+    setTitle("");
     setFirstName("");
     setLastName("");
     setPhone("");
@@ -113,7 +116,12 @@ export function WalkInAppointmentDialog({
       const r1 = await fetch("/api/clients/walk-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ firstName: firstName.trim(), lastName: lastName.trim(), phone }),
+        body: JSON.stringify({
+          title: title || undefined,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phone,
+        }),
       });
       if (!r1.ok) {
         throw new Error(await readApiError(r1, { fallback: "Couldn't create the walk-in client." }));
@@ -171,7 +179,23 @@ export function WalkInAppointmentDialog({
           the patients list with an &quot;Intake pending&quot; badge; complete the intake when they arrive.
         </p>
         <div className="space-y-3">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[0.7fr_1.2fr_1.2fr]">
+            <div className="space-y-1.5">
+              <Label htmlFor="wi-title">Title</Label>
+              <Select value={title || "__none"} onValueChange={(v) => setTitle(v === "__none" ? "" : v)} disabled={pending}>
+                <SelectTrigger id="wi-title">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">—</SelectItem>
+                  {PATIENT_TITLES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}.
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="wi-first">First name *</Label>
               <Input

@@ -24,7 +24,7 @@ export default async function ProfilePage() {
       email={staff.email}
       role={staff.role}
       designation={staff.designation}
-      department={staff.department?.name ?? null}
+      department={staff.department?.name ?? (staff.role === "FRONT_OFFICE" ? "Front Office" : null)}
       centre={staff.centre?.name ?? null}
       hasSignature={!!staff.signatureDataUrl}
       signatureDataUrl={staff.signatureDataUrl}

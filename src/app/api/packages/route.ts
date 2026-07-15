@@ -9,6 +9,9 @@ import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-aut
 import { createAuditLog } from "@/lib/audit";
 import { allocateInvoiceNumber } from "@/lib/invoice-numbering";
 import { computeInvoiceTotals } from "@/lib/discount";
+import { parseAddress } from "@/lib/address";
+import { formatPatientName } from "@/lib/patient-display";
+import { splitGstAmount } from "@/lib/revenue/tax";
 
 const createSchema = z.object({
   clientId: z.string().min(1),
@@ -18,6 +21,7 @@ const createSchema = z.object({
       z.object({
         serviceId: z.string().min(1),
         count: z.number().int().min(1).max(50),
+        consultantId: z.string().optional(),
       }),
     )
     .min(1),
@@ -54,18 +58,62 @@ export async function POST(req: Request) {
   const scope = await assertCentreScope(auth.user, client);
   if (scope) return scope;
 
-  // Resolve the actual consultant from the originating Consultation (if provided).
-  // Falls back to the package creator (FO) so the MIS row never carries a department
-  // name in the consultant column.
+  if (f.spawnInvoice && !f.consultationId) {
+    const missingConsultant = f.serviceMix.find((item) => !item.consultantId);
+    if (missingConsultant) {
+      return NextResponse.json(
+        {
+          error: "consultant_required_for_package_invoice",
+          serviceId: missingConsultant.serviceId,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  const clientState = parseAddress(client.address)?.state;
+  const centreState = parseAddress(client.centre.address)?.state;
+  if (f.spawnInvoice && !clientState) {
+    return NextResponse.json({ error: "client_state_required_for_gst" }, { status: 400 });
+  }
+  if (f.spawnInvoice && !centreState) {
+    return NextResponse.json({ error: "centre_state_required_for_gst" }, { status: 400 });
+  }
+
+  // Resolve the originating consultation consultant if provided. Otherwise
+  // every spawned invoice line must carry its own explicit consultant.
   const consultation = f.consultationId
     ? await prisma.consultation.findUnique({
         where: { id: f.consultationId },
         select: { id: true, consultantId: true, consultant: { select: { name: true } } },
       })
     : null;
-  const resolvedConsultantId = consultation?.consultantId ?? auth.user.id;
-  const resolvedConsultantName =
-    consultation?.consultant?.name ?? auth.user.name ?? "—";
+
+  const consultantIds = new Set<string>();
+  if (consultation?.consultantId) consultantIds.add(consultation.consultantId);
+  for (const item of f.serviceMix) {
+    if (item.consultantId) consultantIds.add(item.consultantId);
+  }
+  const staffById = new Map<string, { id: string; name: string }>();
+  if (consultantIds.size > 0) {
+    const staff = await prisma.staff.findMany({
+      where: {
+        id: { in: Array.from(consultantIds) },
+        isActive: true,
+        role: { in: ["CONSULTANT", "THERAPIST", "ADMIN", "OWNER"] },
+      },
+      select: { id: true, name: true },
+    });
+    for (const s of staff) staffById.set(s.id, s);
+  }
+  for (const id of consultantIds) {
+    if (!staffById.has(id)) {
+      return NextResponse.json(
+        { error: "consultant_not_found_or_inactive", consultantId: id },
+        { status: 400 },
+      );
+    }
+  }
 
   // patientType: "New" when this is the client's first invoice in the centre,
   // else "Existing". The customerType==WALK_IN heuristic is wrong (a returning
@@ -120,6 +168,14 @@ export async function POST(req: Request) {
           }
         : undefined,
   });
+  const taxSplit =
+    f.spawnInvoice && clientState && centreState
+      ? splitGstAmount({
+          gstAmount: totals.totalGst,
+          clientState,
+          centreState,
+        })
+      : { cgstAmount: 0, sgstAmount: 0, igstAmount: 0 };
 
   const totalSessions = f.serviceMix.reduce((n, x) => n + x.count, 0);
   const validFrom = f.validFromIso ? new Date(f.validFromIso) : new Date();
@@ -168,11 +224,16 @@ export async function POST(req: Request) {
       const lineItems = f.serviceMix.map((item) => {
         const svc = svcById.get(item.serviceId)!;
         const qty = item.count * svc.participantCount;
+        const consultantId = item.consultantId ?? consultation?.consultantId ?? null;
+        const consultantName =
+          (consultantId ? staffById.get(consultantId)?.name : null) ??
+          consultation?.consultant?.name ??
+          null;
         return {
           service: svc.name,
           serviceId: svc.id,
-          consultantId: resolvedConsultantId,
-          consultantName: resolvedConsultantName,
+          consultantId,
+          consultantName,
           hsnSac: svc.hsnSacCode ?? null,
           qty,
           perAmount: svc.basePrice,
@@ -188,6 +249,9 @@ export async function POST(req: Request) {
           invoiceFlavor: "SERVICES",
           subtotal: totals.subtotal,
           totalGst: totals.totalGst,
+          cgstAmount: taxSplit.cgstAmount,
+          sgstAmount: taxSplit.sgstAmount,
+          igstAmount: taxSplit.igstAmount,
           totalAmount: totals.totalAmount,
           paidAmount: 0,
           discountPercent: f.discountPercent,
@@ -197,6 +261,9 @@ export async function POST(req: Request) {
           promotionCode: promo?.code ?? null,
           promotionDiscount: totals.promotionDiscount,
           status: "SENT",
+          isLocked: true,
+          lockedAt: new Date(),
+          finalizedAt: new Date(),
           lineItems: JSON.stringify(lineItems),
           clientId: f.clientId,
           packageId: pkg.id,
@@ -214,6 +281,11 @@ export async function POST(req: Request) {
         const gross = li.qty * li.perAmount;
         const lineAfterAll = misRound2(gross * misRatio);
         const lineGst = misRound2(lineAfterAll * li.gstRate);
+        const lineTaxSplit = splitGstAmount({
+          gstAmount: lineGst,
+          clientState: clientState!,
+          centreState: centreState!,
+        });
         const lineNet = misRound2(lineAfterAll + lineGst);
         await tx.misEntry.create({
           data: {
@@ -224,12 +296,12 @@ export async function POST(req: Request) {
             centreName: client.centre!.name,
             invoiceNumber: invoice.invoiceNumber,
             invoiceDate: invoice.createdAt,
-            patientName: `${client.firstName} ${client.lastName}`,
+            patientName: formatPatientName(client),
             patientType: resolvedPatientType,
             customerType: client.customerType,
             referralSourceName: client.referralSource?.name ?? client.referredByName ?? null,
-            consultantId: resolvedConsultantId,
-            consultant: resolvedConsultantName,
+            consultantId: li.consultantId,
+            consultant: li.consultantName,
             service: li.service,
             department: svcById.get(li.serviceId)?.department?.name ?? null,
             type:
@@ -245,6 +317,9 @@ export async function POST(req: Request) {
             amountBeforeTax: lineAfterAll,
             gstPercent: li.gstRate * 100,
             gst: lineGst,
+            cgstAmount: lineTaxSplit.cgstAmount,
+            sgstAmount: lineTaxSplit.sgstAmount,
+            igstAmount: lineTaxSplit.igstAmount,
             netPayableAmount: lineNet,
             perSessionAmount: li.perAmount,
             noOfSessions: li.qty,

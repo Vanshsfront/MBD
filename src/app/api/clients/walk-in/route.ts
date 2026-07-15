@@ -14,8 +14,10 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { activeCentreId } from "@/lib/centre";
 import { createAuditLog } from "@/lib/audit";
+import { PATIENT_TITLES } from "@/lib/patient-display";
 
 const walkInSchema = z.object({
+  title: z.enum(PATIENT_TITLES).optional(),
   firstName: z.string().trim().min(1, "first_name_required").max(80),
   // Last name is optional for walk-ins — FO can fill it later.
   lastName: z.string().trim().max(80).default(""),
@@ -65,6 +67,7 @@ export async function POST(req: Request) {
     return await tx.client.create({
       data: {
         clientCode,
+        title: f.title ?? null,
         firstName: f.firstName,
         lastName: f.lastName,
         phone: f.phone,
@@ -73,7 +76,7 @@ export async function POST(req: Request) {
         customerType: "WALK_IN",
         centreId,
       },
-      select: { id: true, clientCode: true, firstName: true, lastName: true, phone: true },
+      select: { id: true, clientCode: true, title: true, firstName: true, lastName: true, phone: true },
     });
   });
 

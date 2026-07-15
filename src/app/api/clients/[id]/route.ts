@@ -11,12 +11,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta, assertCentreScope } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
+import { PATIENT_TITLES } from "@/lib/patient-display";
 
 const addressSchema = z
   .object({
     line1: z.string().max(200).optional().nullable(),
     line2: z.string().max(200).optional().nullable(),
     city: z.string().max(80).optional().nullable(),
+    state: z.string().max(80).optional().nullable(),
     pincode: z.string().max(20).optional().nullable(),
   })
   .nullable();
@@ -30,6 +32,7 @@ const emergencySchema = z
   .nullable();
 
 const patchSchema = z.object({
+  title: z.enum(PATIENT_TITLES).optional().nullable(),
   firstName: z.string().min(1).max(80).optional(),
   lastName: z.string().min(1).max(80).optional(),
   phone: z.string().min(5).max(20).optional(),
@@ -41,6 +44,7 @@ const patchSchema = z.object({
   occupation: z.string().max(120).optional().nullable(),
   sport: z.string().max(120).optional().nullable(),
   maritalStatus: z.string().max(40).optional().nullable(),
+  gstNumber: z.string().max(30).optional().nullable(),
   address: addressSchema.optional(),
   emergencyContact: emergencySchema.optional(),
 });
@@ -74,6 +78,7 @@ export async function PATCH(
   // Build the update payload — JSON-stringify address + emergency to match the
   // existing storage convention. Setting either to null clears it.
   const data: Record<string, unknown> = {};
+  if (f.title !== undefined) data.title = f.title;
   if (f.firstName !== undefined) data.firstName = f.firstName;
   if (f.lastName !== undefined) data.lastName = f.lastName;
   if (f.phone !== undefined) data.phone = f.phone;
@@ -85,6 +90,7 @@ export async function PATCH(
   if (f.occupation !== undefined) data.occupation = f.occupation;
   if (f.sport !== undefined) data.sport = f.sport;
   if (f.maritalStatus !== undefined) data.maritalStatus = f.maritalStatus;
+  if (f.gstNumber !== undefined) data.gstNumber = f.gstNumber;
   if (f.address !== undefined) {
     data.address = f.address === null ? null : JSON.stringify(f.address);
   }

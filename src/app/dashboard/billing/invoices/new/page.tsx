@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { activeCentreId } from "@/lib/centre";
+import { formatAddress, parseAddress } from "@/lib/address";
+import { formatPatientName } from "@/lib/patient-display";
 import { NewInvoiceForm } from "./new-invoice-form";
 
 export const metadata = { title: "New invoice — MBD Clinic OS" };
@@ -30,7 +32,16 @@ export default async function NewInvoicePage({
     prisma.client.findMany({
       where: { centreId, status: { in: ["ACTIVE", "INACTIVE"] } },
       orderBy: [{ firstName: "asc" }],
-      select: { id: true, firstName: true, lastName: true, clientCode: true, phone: true },
+      select: {
+        id: true,
+        title: true,
+        firstName: true,
+        lastName: true,
+        clientCode: true,
+        phone: true,
+        address: true,
+        gstNumber: true,
+      },
       take: 500,
     }),
     prisma.service.findMany({
@@ -105,8 +116,14 @@ export default async function NewInvoicePage({
         initialClientId={params.clientId}
         clients={clients.map((c) => ({
           id: c.id,
-          label: `${c.firstName} ${c.lastName} (${c.clientCode})`,
+          label: `${formatPatientName(c)} (${c.clientCode})`,
           phone: c.phone,
+          title: c.title,
+          name: formatPatientName(c),
+          clientCode: c.clientCode,
+          address: formatAddress(parseAddress(c.address)),
+          addressState: parseAddress(c.address)?.state ?? "",
+          gstNumber: c.gstNumber ?? "",
         }))}
         services={services.map((s) => ({
           id: s.id,

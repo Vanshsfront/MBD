@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { formatINR } from "@/lib/utils";
+import { formatClinicTime } from "@/lib/date-format";
 
 export async function FrontOfficeDashboard({
   userName,
@@ -497,7 +498,7 @@ export async function FrontOfficeDashboard({
                         icon={<Receipt className="h-4 w-4" />}
                         label="Collect payment"
                       />
-                      <p className="text-[10px] text-muted-foreground px-1">Today's session</p>
+                      <p className="text-[10px] text-muted-foreground px-1">Today&apos;s session</p>
                     </div>
                     <div className="flex flex-col gap-1">
                       <QuickAction
@@ -576,7 +577,7 @@ function therapistShort(name: string): string {
 }
 
 function formatTime(d: Date): string {
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatClinicTime(d, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function minutesUntilLabel(then: Date, now: Date): string {

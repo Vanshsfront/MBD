@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDate } from "@/lib/date-format";
 
 export const metadata = { title: "Invoices — MBD Clinic OS" };
 
@@ -44,7 +45,7 @@ export default async function PatientInvoicesPage({
                   <div>
                     <p className="font-mono text-sm font-medium">{inv.invoiceNumber}</p>
                     <p className="text-xs text-muted-foreground">
-                      {inv.invoiceFlavor} · {new Date(inv.createdAt).toLocaleDateString("en-IN")} ·{" "}
+                      {inv.invoiceFlavor} · {formatClinicDate(inv.createdAt)} ·{" "}
                       {inv.payments.length} payment{inv.payments.length === 1 ? "" : "s"}
                     </p>
                   </div>

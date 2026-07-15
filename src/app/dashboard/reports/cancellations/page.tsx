@@ -7,6 +7,8 @@ import { activeCentreId } from "@/lib/centre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { nativeControlClass } from "@/lib/select-styles";
+import { formatClinicDateTime } from "@/lib/date-format";
+import { formatPatientName } from "@/lib/patient-display";
 
 export const metadata = { title: "Cancellations — MBD Clinic OS" };
 
@@ -41,7 +43,7 @@ export default async function CancellationsReport({
       orderBy: { cancelledAt: "desc" },
       take: 30,
       include: {
-        client: { select: { id: true, firstName: true, lastName: true, clientCode: true } },
+        client: { select: { id: true, title: true, firstName: true, lastName: true, clientCode: true } },
         therapist: { select: { name: true } },
       },
     }),
@@ -100,11 +102,11 @@ export default async function CancellationsReport({
                   >
                     <div>
                       <p className="font-medium">
-                        {a.client.firstName} {a.client.lastName}{" "}
+                        {formatPatientName(a.client)}{" "}
                         <span className="text-muted-foreground">({a.client.clientCode})</span>
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {a.therapist.name} · {a.startTime.toLocaleString("en-IN")}
+                        {a.therapist.name} · {formatClinicDateTime(a.startTime)}
                         {a.cancelledReason ? ` · ${a.cancelledReason}` : ""}
                       </p>
                     </div>

@@ -24,9 +24,11 @@ import { Label } from "@/components/ui/label";
 import { PhoneField } from "@/components/ui/phone-field";
 import { DateField } from "@/components/ui/date-field";
 import { readApiError } from "@/lib/error-messages";
+import { PATIENT_TITLES } from "@/lib/patient-display";
 
 interface InitialClient {
   id: string;
+  title: string | null;
   firstName: string;
   lastName: string;
   phone: string;
@@ -38,7 +40,14 @@ interface InitialClient {
   occupation: string | null;
   sport: string | null;
   maritalStatus: string | null;
-  address: { line1?: string; line2?: string; city?: string; pincode?: string } | null;
+  gstNumber: string | null;
+  address: {
+    line1?: string | null;
+    line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    pincode?: string | null;
+  } | null;
   emergencyContact: { name?: string; phone?: string; relationship?: string } | null;
 }
 
@@ -47,6 +56,7 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
 
+  const [title, setTitle] = useState(client.title ?? "");
   const [firstName, setFirstName] = useState(client.firstName);
   const [lastName, setLastName] = useState(client.lastName);
   const [phone, setPhone] = useState(client.phone);
@@ -58,8 +68,10 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
   const [occupation, setOccupation] = useState(client.occupation ?? "");
   const [sport, setSport] = useState(client.sport ?? "");
   const [maritalStatus, setMaritalStatus] = useState(client.maritalStatus ?? "");
+  const [gstNumber, setGstNumber] = useState(client.gstNumber ?? "");
   const [addrLine1, setAddrLine1] = useState(client.address?.line1 ?? "");
   const [addrCity, setAddrCity] = useState(client.address?.city ?? "");
+  const [addrState, setAddrState] = useState(client.address?.state ?? "Maharashtra");
   const [addrPincode, setAddrPincode] = useState(client.address?.pincode ?? "");
   const [emName, setEmName] = useState(client.emergencyContact?.name ?? "");
   const [emPhone, setEmPhone] = useState(client.emergencyContact?.phone ?? "");
@@ -77,6 +89,7 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
     try {
       const ageNum = age.trim() ? Number(age) : null;
       const payload: Record<string, unknown> = {
+        title: title || null,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         phone: phone.trim(),
@@ -88,11 +101,13 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
         occupation: occupation.trim() || null,
         sport: sport.trim() || null,
         maritalStatus: maritalStatus.trim() || null,
+        gstNumber: gstNumber.trim() || null,
         address:
-          addrLine1.trim() || addrCity.trim() || addrPincode.trim()
+          addrLine1.trim() || addrCity.trim() || addrState.trim() || addrPincode.trim()
             ? {
                 line1: addrLine1.trim() || null,
                 city: addrCity.trim() || null,
+                state: addrState.trim() || null,
                 pincode: addrPincode.trim() || null,
               }
             : null,
@@ -136,6 +151,21 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
+            <Field id="title" label="Title">
+              <select
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              >
+                <option value="">—</option>
+                {PATIENT_TITLES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}.
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field id="first-name" label="First name *">
               <Input
                 id="first-name"
@@ -230,6 +260,13 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
                 onChange={(e) => setSport(e.target.value)}
               />
             </Field>
+            <Field id="gst-number" label="Client GST number">
+              <Input
+                id="gst-number"
+                value={gstNumber}
+                onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
+              />
+            </Field>
           </div>
 
           <fieldset className="space-y-3 rounded-md border p-3">
@@ -247,6 +284,13 @@ export function EditDemographicsDialog({ client }: { client: InitialClient }) {
                   id="addr-city"
                   value={addrCity}
                   onChange={(e) => setAddrCity(e.target.value)}
+                />
+              </Field>
+              <Field id="addr-state" label="State">
+                <Input
+                  id="addr-state"
+                  value={addrState}
+                  onChange={(e) => setAddrState(e.target.value)}
                 />
               </Field>
               <Field id="addr-pincode" label="Pincode">

@@ -9,6 +9,7 @@ import { createAuditLog, computeChanges } from "@/lib/audit";
 import { isClinicalRole } from "@/lib/permissions";
 import { validateAppointmentTiming, ADJACENCY_WINDOW_MINUTES } from "@/lib/appointments";
 import { staffColor } from "@/lib/staff-colors";
+import { formatClinicDateTime } from "@/lib/date-format";
 
 const createSchema = z.object({
   clientId: z.string().min(1),
@@ -287,7 +288,7 @@ export async function POST(req: Request) {
     data: {
       type: notificationType,
       title: priorAppointmentCount === 0 ? "New patient booked" : "Appointment booked",
-      message: `${client.firstName} ${client.lastName} on ${start.toLocaleString("en-IN")}`,
+      message: `${client.firstName} ${client.lastName} on ${formatClinicDateTime(start)}`,
       targetUserId: f.therapistId,
       metadata: JSON.stringify({ appointmentId: appointment.id, clientId: f.clientId }),
     },

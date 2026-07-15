@@ -1,12 +1,9 @@
 "use client";
 
-// Terms & Conditions modal — fetches /terms.md on first open and renders
-// with a minimal markdown subset (#/## headings, paragraphs, bullet lists,
-// horizontal rules). The "Download PDF" button HEAD-probes /terms.pdf at
-// mount: visible only when a real PDF has been dropped into /public/ —
-// keeps the placeholder phase clean without breaking the contract.
+// Versioned Terms of Service modal. Agreement is only possible after the user
+// scrolls the active legal document to the bottom.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,22 +17,40 @@ import { Button } from "@/components/ui/button";
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  agreed?: boolean;
+  onAgree?: () => void;
 }
 
-export function TermsModal({ open, onOpenChange }: Props) {
+interface LegalDocumentResponse {
+  key: string;
+  version: string;
+  effectiveDate: string;
+  bodyMarkdown: string;
+}
+
+export function TermsModal({ open, onOpenChange, agreed = false, onAgree }: Props) {
   const [content, setContent] = useState<string | null>(null);
-  const [pdfAvailable, setPdfAvailable] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
+  const [effectiveDate, setEffectiveDate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scrolledToBottom, setScrolledToBottom] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open || content !== null) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/terms.md", { cache: "force-cache" });
+        const res = await fetch("/api/legal-documents/terms-of-service", {
+          cache: "no-store",
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        if (!cancelled) setContent(text);
+        const data = (await res.json()) as LegalDocumentResponse;
+        if (!cancelled) {
+          setContent(data.bodyMarkdown);
+          setVersion(data.version);
+          setEffectiveDate(data.effectiveDate);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load terms.");
       }
@@ -45,30 +60,35 @@ export function TermsModal({ open, onOpenChange }: Props) {
     };
   }, [open, content]);
 
-  // HEAD-probe terms.pdf at mount so the button is only shown when the file
-  // genuinely exists. Cheap enough to run unconditionally.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/terms.pdf", { method: "HEAD" });
-        if (!cancelled) setPdfAvailable(res.ok);
-      } catch {
-        if (!cancelled) setPdfAvailable(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!open) return;
+    void Promise.resolve().then(() => setScrolledToBottom(false));
+  }, [open]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+      setScrolledToBottom(true);
+    }
+  }
+
+  function agree() {
+    onAgree?.();
+    onOpenChange(false);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Terms & Conditions</DialogTitle>
+          <DialogTitle>Terms of Service</DialogTitle>
         </DialogHeader>
-        <div className="-mx-6 max-h-[60vh] overflow-y-auto border-y px-6 py-4">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="-mx-6 max-h-[60vh] overflow-y-auto border-y px-6 py-4"
+        >
           {error ? (
             <p className="text-sm text-destructive">
               Could not load terms ({error}). Please ask the front desk for a copy.
@@ -77,24 +97,27 @@ export function TermsModal({ open, onOpenChange }: Props) {
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
             <article className="prose prose-sm max-w-none">
+              {version ? (
+                <p className="text-xs text-muted-foreground">
+                  Version {version}
+                  {effectiveDate ? ` · effective ${new Date(effectiveDate).toLocaleDateString("en-IN")}` : ""}
+                </p>
+              ) : null}
               {renderMarkdown(content)}
             </article>
           )}
         </div>
-        <DialogFooter>
-          {pdfAvailable ? (
-            <a
-              href="/terms.pdf"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-card px-4 text-sm font-medium hover:bg-accent"
-            >
-              Download PDF
-            </a>
-          ) : null}
+        <DialogFooter className="gap-2">
           <DialogClose asChild>
-            <Button type="button">Close</Button>
+            <Button type="button" variant="outline">Close</Button>
           </DialogClose>
+          <Button
+            type="button"
+            disabled={agreed || !content || !scrolledToBottom}
+            onClick={agree}
+          >
+            {agreed ? "Agreed" : scrolledToBottom ? "I agree" : "Scroll to agree"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

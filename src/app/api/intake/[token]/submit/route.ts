@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { CATEGORY_KEYS } from "@/lib/categories";
 import { enforce, clientIp } from "@/lib/rate-limit";
+import { PATIENT_TITLES } from "@/lib/patient-display";
 
 // Required-field policy:
 //   - Mandatory per chat (3 Apr / 6 Apr): firstName, lastName, phone, email,
@@ -18,6 +19,7 @@ import { enforce, clientIp } from "@/lib/rate-limit";
 // The browser form mirrors these; this is the last line of defense for any
 // caller who bypasses the UI.
 const intakeSchema = z.object({
+  title: z.enum(PATIENT_TITLES).optional(),
   firstName: z.string().trim().min(1, "first_name_required").max(80),
   lastName: z.string().trim().min(1, "last_name_required").max(80),
   email: z
@@ -41,6 +43,7 @@ const intakeSchema = z.object({
   sport: z.string().max(120).optional(),
   addressLine1: z.string().trim().min(1, "address_line1_required").max(200),
   addressCity: z.string().trim().min(1, "address_city_required").max(80),
+  addressState: z.string().trim().min(1, "address_state_required").max(80),
   addressPincode: z
     .string()
     .trim()
@@ -113,6 +116,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   }
   const f = parsed.data;
 
+  const activeTerms = await prisma.legalDocument.findFirst({
+    where: { key: "TERMS_OF_SERVICE", isActive: true },
+    orderBy: { effectiveDate: "desc" },
+    select: { version: true },
+  });
+  if (!activeTerms) {
+    return NextResponse.json({ error: "active_terms_of_service_missing" }, { status: 503 });
+  }
+
   const centreSlug = tokenRow.centre?.slug ?? "COL-MBD";
 
   // Server-side compute of age from dob — the form sends `age` as a hint
@@ -151,6 +163,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const client = await tx.client.create({
       data: {
         clientCode,
+        title: f.title ?? null,
         firstName: f.firstName,
         lastName: f.lastName,
         email: f.email,
@@ -164,6 +177,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         address: JSON.stringify({
           line1: f.addressLine1,
           city: f.addressCity,
+          state: f.addressState,
           pincode: f.addressPincode,
         }),
         emergencyContact: JSON.stringify({
@@ -186,6 +200,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         liabilityWaiverSigned: false,
         commercialTermsAccepted: f.commercialTerms,
         cancellationPolicyAcknowledged: f.cancellationPolicy,
+        termsOfServiceAgreed: true,
+        termsOfServiceVersion: activeTerms.version,
+        termsOfServiceAgreedAt: new Date(),
       },
     });
 

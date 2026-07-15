@@ -114,7 +114,17 @@ export async function POST(req: Request) {
 
     await tx.invoice.update({
       where: { id: invoice.id },
-      data: { paidAmount: newPaid, status: newStatus },
+      data: {
+        paidAmount: newPaid,
+        status: newStatus,
+        ...(newStatus === "PAID"
+          ? {
+              isLocked: true,
+              lockedAt: invoice.lockedAt ?? paidAt,
+              finalizedAt: invoice.finalizedAt ?? paidAt,
+            }
+          : {}),
+      },
     });
 
     // Update MIS entries proportionally. Each entry's share is

@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
 import { activeCentreId } from "@/lib/centre";
+import { formatClinicDate } from "@/lib/date-format";
+import { formatPatientName } from "@/lib/patient-display";
 
 export const metadata = { title: "Invoices — MBD Clinic OS" };
 
@@ -66,7 +68,7 @@ export default async function InvoiceListPage({
         // Parsed below into "Consultant — Service +N" so the table row
         // reads like the row tells you what was sold, not just "services".
         lineItems: true,
-        client: { select: { firstName: true, lastName: true, clientCode: true } },
+        client: { select: { title: true, firstName: true, lastName: true, clientCode: true } },
       },
     }),
     prisma.invoice.groupBy({
@@ -178,7 +180,7 @@ export default async function InvoiceListPage({
                       <td className="muted tabular">{formatDate(inv.createdAt)}</td>
                       <td>
                         <span className="block text-sm font-medium">
-                          {inv.client.firstName} {inv.client.lastName}
+                          {formatPatientName(inv.client)}
                           {summary.consultant ? (
                             <span className="font-normal text-muted-foreground"> / {summary.consultant}</span>
                           ) : null}
@@ -238,7 +240,7 @@ function StatusChip({ status, invoiceType }: { status: InvoiceStatus; invoiceTyp
 }
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return formatClinicDate(d, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 // Vansh's invoice headline helper — pulls a human summary out of the

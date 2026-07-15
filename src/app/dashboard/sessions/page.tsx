@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { nativeControlClass } from "@/lib/select-styles";
 import { formatINR } from "@/lib/utils";
+import { formatClinicDateTime } from "@/lib/date-format";
+import { formatPatientName } from "@/lib/patient-display";
 
 export const metadata = { title: "Sessions — MBD Clinic OS" };
 
@@ -51,7 +53,7 @@ export default async function SessionsPage({
     orderBy: { sessionDate: "desc" },
     take: 200,
     include: {
-      client: { select: { id: true, firstName: true, lastName: true, clientCode: true } },
+      client: { select: { id: true, title: true, firstName: true, lastName: true, clientCode: true } },
       therapist: { select: { id: true, name: true } },
       service: { select: { name: true, basePrice: true } },
     },
@@ -166,14 +168,14 @@ export default async function SessionsPage({
                           href={`/dashboard/patients/${s.client.id}`}
                           className="hover:underline"
                         >
-                          {s.client.firstName} {s.client.lastName}
+                          {formatPatientName(s.client)}
                         </Link>{" "}
                         <span className="text-muted-foreground">
                           ({s.client.clientCode})
                         </span>
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {s.sessionDate.toLocaleString("en-IN", {
+                        {formatClinicDateTime(s.sessionDate, {
                           day: "2-digit",
                           month: "short",
                           year: "numeric",

@@ -69,9 +69,16 @@ interface PromoOption {
   label: string;
 }
 
+interface StaffOption {
+  id: string;
+  name: string;
+  designation: string | null;
+}
+
 interface MixItem {
   serviceId: string;
   count: number;
+  consultantId?: string;
 }
 
 interface PendingSuggestion {
@@ -88,6 +95,7 @@ interface Props {
   packages: PackageRow[];
   consultations: ConsultationRow[];
   services: ServiceOption[];
+  staff: StaffOption[];
   promotions: PromoOption[];
 }
 
@@ -98,6 +106,7 @@ export function PackagesView({
   packages,
   consultations,
   services,
+  staff,
   promotions,
 }: Props) {
   const router = useRouter();
@@ -172,10 +181,23 @@ export function PackagesView({
   function remove(serviceId: string) {
     setMix((prev) => prev.filter((m) => m.serviceId !== serviceId));
   }
+  function setConsultant(serviceId: string, consultantId: string) {
+    setMix((prev) =>
+      prev.map((m) =>
+        m.serviceId === serviceId
+          ? { ...m, consultantId: consultantId === SELECT_NONE ? undefined : consultantId }
+          : m,
+      ),
+    );
+  }
 
   async function create() {
     if (mix.length === 0) {
       toast.error("Add at least one service");
+      return;
+    }
+    if (!consultationId && mix.some((m) => !m.consultantId)) {
+      toast.error("Pick a consultant for every service, or link a consultation.");
       return;
     }
     setPending(true);
@@ -391,6 +413,26 @@ export function PackagesView({
                           {svc.durationMin ? ` · ${svc.durationMin} min` : ""}
                         </p>
                       </div>
+                      <div className="min-w-[220px] flex-1">
+                        <Label className="sr-only">Consultant for {svc.name}</Label>
+                        <Select
+                          value={m.consultantId ?? SELECT_NONE}
+                          onValueChange={(v) => setConsultant(m.serviceId, v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Consultant" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={SELECT_NONE}>Use linked consultation</SelectItem>
+                            {staff.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}
+                                {s.designation ? ` · ${s.designation}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="flex items-center gap-2">
                         <Input
                           type="number"
@@ -478,13 +520,14 @@ export function PackagesView({
 }
 
 function PackageDetailCard({ pkg }: { pkg: PackageRow }) {
+  const [nowMs] = useState(() => Date.now());
   const mix = parseServiceMix(pkg.serviceMix);
   const pct = pkg.totalSessions > 0
     ? Math.min(100, Math.round((pkg.completedSessions / pkg.totalSessions) * 100))
     : 0;
   const remaining = pkg.totalSessions - pkg.completedSessions;
   const daysToExpiry = Math.ceil(
-    (new Date(pkg.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (new Date(pkg.validUntil).getTime() - nowMs) / (1000 * 60 * 60 * 24),
   );
   const isExpiringSoon = pkg.status === "ACTIVE" && daysToExpiry >= 0 && daysToExpiry <= 14;
 

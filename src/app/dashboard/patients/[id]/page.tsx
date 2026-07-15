@@ -23,6 +23,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatINR } from "@/lib/utils";
+import { formatAddress, parseAddress } from "@/lib/address";
+import { formatClinicDate, formatClinicTime } from "@/lib/date-format";
 import { SharePortalButton } from "./share-portal-button";
 import { EditDemographicsDialog } from "./edit-demographics-dialog";
 import { TherapistSessionSummary } from "./therapist-session-summary";
@@ -122,7 +124,7 @@ export default async function PatientOverview({
     ]);
   if (!client) notFound();
 
-  const address = parseJson<{ line1?: string; city?: string; pincode?: string }>(client.address);
+  const address = parseAddress(client.address);
   const emergency = parseJson<{ name?: string; phone?: string; relationship?: string }>(
     client.emergencyContact,
   );
@@ -342,7 +344,7 @@ export default async function PatientOverview({
           <div className="flex items-center justify-between border-b border-[color:var(--border-light)] px-5 py-4">
             <h2 className="text-base font-semibold">Upcoming appointments</h2>
             <Link
-              href="/dashboard/calendar"
+              href={`/dashboard/calendar?clientId=${client.id}&returnTo=/dashboard/patients/${client.id}`}
               className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               Open calendar <ArrowRight className="h-3 w-3" aria-hidden />
@@ -385,6 +387,7 @@ export default async function PatientOverview({
                 <EditDemographicsDialog
                   client={{
                     id: client.id,
+                    title: client.title ?? null,
                     firstName: client.firstName,
                     lastName: client.lastName,
                     phone: client.phone,
@@ -396,6 +399,7 @@ export default async function PatientOverview({
                     occupation: client.occupation ?? null,
                     sport: client.sport ?? null,
                     maritalStatus: client.maritalStatus ?? null,
+                    gstNumber: client.gstNumber ?? null,
                     address: address ?? null,
                     emergencyContact: emergency ?? null,
                   }}
@@ -410,9 +414,10 @@ export default async function PatientOverview({
               <KV k="Email" v={client.email} />
               <KV
                 k="Address"
-                v={[address?.line1, address?.city, address?.pincode].filter(Boolean).join(", ")}
+                v={formatAddress(address)}
                 wide
               />
+              <KV k="GST number" v={client.gstNumber} />
               <KV
                 k="Emergency contact"
                 v={
@@ -608,15 +613,15 @@ function parseJson<T>(s: string | null): T | null {
 }
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return formatClinicDate(d, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function formatApptDay(d: Date): string {
-  return d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
+  return formatClinicDate(d, { weekday: "short", day: "2-digit", month: "short" });
 }
 
 function formatApptTime(d: Date): string {
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatClinicTime(d, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function dominanceLabel(d: string | null | undefined): string | null {

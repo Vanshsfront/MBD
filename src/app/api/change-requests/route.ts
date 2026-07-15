@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 import { validateAppointmentTiming } from "@/lib/appointments";
+import { formatClinicDateTime } from "@/lib/date-format";
 
 // ───────── Schemas ─────────
 
@@ -338,7 +339,7 @@ async function approveReschedule(
       title: "Reschedule approved",
       message:
         response ??
-        `Your reschedule was approved. New time: ${newStart.toLocaleString("en-IN")}.`,
+        `Your reschedule was approved. New time: ${formatClinicDateTime(newStart)}.`,
       targetUserId: requesterId,
       metadata: JSON.stringify({ changeRequestId: crId, appointmentId: existing.id }),
     },
