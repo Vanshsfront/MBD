@@ -16,6 +16,7 @@ import { renderDocxTemplate } from "@/lib/templates/docx";
 import { CATEGORY_KEYS, type ServiceCategoryKey } from "@/lib/categories";
 import { formatAddress, parseAddress } from "@/lib/address";
 import { formatPatientName } from "@/lib/patient-display";
+import { guardianBlock } from "@/lib/consent-guardian";
 import { formatClinicDate, formatClinicTime } from "@/lib/date-format";
 
 interface EmergencyJson {
@@ -27,6 +28,7 @@ interface EmergencyJson {
 const bodySchema = z.object({
   signatureDataUrl: z.string().min(1).max(11 * 1024 * 1024),
   method: z.enum(["DIGITAL_PAD", "PHYSICAL_SCAN"]).optional(),
+  guardianSignatureDataUrl: z.string().min(1).max(11 * 1024 * 1024).optional(),
 });
 
 export async function POST(
@@ -124,9 +126,13 @@ export async function POST(
     },
     assignedTo: assignedNames.join(", "),
     assignedBy: auth.user.name ?? auth.user.email ?? "",
+    guardian: guardianBlock(intake),
     // Use the transient signature from the request body, NOT what's on file.
     // This is the whole point of the preview endpoint.
     patientSignature: parsed.data.signatureDataUrl,
+    // Preview runs before anything is persisted, so the guardian signature can
+    // only come from the body — see guardianSignatureDataUrl in the schema.
+    guardianSignature: parsed.data.guardianSignatureDataUrl ?? "",
     frontOffice: {
       name: auth.user.name ?? "",
       signature: foSignature?.signatureDataUrl ?? "",

@@ -59,6 +59,12 @@ const MESSAGES: Record<string, MessageFactory> = {
   file_too_large: "That file is too large. Use one under 10 MB.",
   signature_too_large:
     "The signature or scan is too large. Use a compressed image under 10 MB.",
+  patient_signature_missing:
+    "Finalize the patient's consent before downloading the consent form.",
+  guardian_consent_required:
+    "This patient is a minor — confirm guardian consent and capture the guardian's name and signature.",
+  intake_already_completed:
+    "This patient has already completed the intake form, so the invite can't be removed. Their patient record is unaffected.",
   unknown_template: "That clinical template isn't recognised.",
   no_active_centre: "Select a centre before continuing.",
   centre_not_found: "That centre doesn't exist.",

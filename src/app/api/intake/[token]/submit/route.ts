@@ -39,6 +39,7 @@ const intakeSchema = z.object({
   age: z.coerce.number().int().min(0).max(120).optional(),
   sex: z.enum(["M", "F", "OTHER"], { message: "sex_required" }),
   dominance: z.enum(["RIGHT", "LEFT", "AMBI"]).optional(),
+  preferredTherapistGender: z.enum(["M", "F", "NO_PREFERENCE"]).optional(),
   occupation: z.string().max(120).optional(),
   sport: z.string().max(120).optional(),
   addressLine1: z.string().trim().min(1, "address_line1_required").max(200),
@@ -172,6 +173,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         age: computedAge,
         sex: f.sex,
         dominance: f.dominance ?? null,
+        preferredTherapistGender: f.preferredTherapistGender ?? null,
         occupation: f.occupation ?? null,
         sport: f.sport ?? null,
         address: JSON.stringify({

@@ -65,12 +65,17 @@ const TRANSPARENT_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
   "base64",
 );
-function decodeSignature(value: unknown): Buffer {
-  if (typeof value !== "string" || value.length === 0) return TRANSPARENT_PNG;
+function signatureBase64(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
   const m = /^data:image\/(?:png|jpe?g);base64,(.+)$/.exec(value);
-  if (!m) return TRANSPARENT_PNG;
+  return m ? m[1]! : null;
+}
+
+function decodeSignature(value: unknown): Buffer {
+  const b64 = signatureBase64(value);
+  if (!b64) return TRANSPARENT_PNG;
   try {
-    return Buffer.from(m[1]!, "base64");
+    return Buffer.from(b64, "base64");
   } catch {
     return TRANSPARENT_PNG;
   }
@@ -91,7 +96,11 @@ function buildImageModule(): any {
     centered: false,
     fileType: "docx",
     getImage: (tagValue: unknown): Buffer => decodeSignature(tagValue),
-    getSize: (): [number, number] => [180, 60],
+    // Collapse a placeholder to 1x1 instead of reserving the full 180x60 box.
+    // Optional signatures (the guardian block on an adult's consent, or an FO
+    // with none on file) otherwise punch a blank gap into every document.
+    getSize: (_img, tagValue): [number, number] =>
+      signatureBase64(tagValue) ? [180, 60] : [1, 1],
   });
 }
 

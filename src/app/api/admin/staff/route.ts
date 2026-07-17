@@ -23,6 +23,10 @@ const colorSchema = z
   .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "must be a hex colour")
   .nullish();
 
+// M | F | OTHER, matching Client.sex — compared against a patient's stated
+// therapist-gender preference to flag (never block) a mismatch at assignment.
+const genderSchema = z.enum(["M", "F", "OTHER"]).nullish();
+
 const createSchema = z.object({
   name: z.string().min(1).max(120),
   email: z.string().email().max(160),
@@ -32,6 +36,7 @@ const createSchema = z.object({
   centreId: z.string().min(1).nullish(),
   designation: z.string().max(120).nullish(),
   color: colorSchema,
+  gender: genderSchema,
 });
 
 const updateSchema = z.object({
@@ -42,6 +47,7 @@ const updateSchema = z.object({
   centreId: z.string().min(1).nullish(),
   designation: z.string().max(120).nullish(),
   color: colorSchema,
+  gender: genderSchema,
   isActive: z.boolean().optional(),
   resetPassword: z.string().min(6).max(60).optional(),
 });
@@ -78,6 +84,7 @@ export async function POST(req: Request) {
       centreId,
       designation: f.designation ?? null,
       color: f.color ?? null,
+      gender: f.gender ?? null,
     },
   });
 
@@ -123,6 +130,7 @@ export async function PATCH(req: Request) {
   if (f.isActive !== undefined) data.isActive = f.isActive;
   if (f.designation !== undefined) data.designation = f.designation ?? null;
   if (f.color !== undefined) data.color = f.color ?? null;
+  if (f.gender !== undefined) data.gender = f.gender ?? null;
   if (f.departmentId !== undefined) data.departmentId = f.departmentId ?? null;
   if (f.centreId !== undefined) data.centreId = f.centreId ?? null;
   // Don't reassign the OWNER/DEV away from their privileged role via this UI.
@@ -141,6 +149,7 @@ export async function PATCH(req: Request) {
       centreId: existing.centreId,
       designation: existing.designation,
       color: existing.color,
+      gender: existing.gender,
       isActive: existing.isActive,
     },
     {
@@ -150,6 +159,7 @@ export async function PATCH(req: Request) {
       centreId: updated.centreId,
       designation: updated.designation,
       color: updated.color,
+      gender: updated.gender,
       isActive: updated.isActive,
     },
   );

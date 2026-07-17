@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { groupNav, navItemsFor, SECTION_LABELS } from "@/lib/nav";
@@ -110,21 +111,26 @@ export async function DashboardShell({
           <form
             action={async () => {
               "use server";
-              // AUTH-007: bump sessionVersion before clearing the cookie so
-              // any other device still holding the JWT is rejected by
-              // api-auth.ts:verifySessionVersion on its next request. A
-              // logout that doesn't revoke the token is a logout in name
-              // only. DB failure must not block sign-out.
+              // AUTH-007: bump sessionVersion so any other device still
+              // holding the JWT is rejected by api-auth.ts:verifySessionVersion
+              // on its next request. A logout that doesn't revoke the token is
+              // a logout in name only, so this must still run — but via
+              // after(), so a slow DB write can't stall the redirect and leave
+              // a stale dashboard on screen (which reads as "the button didn't
+              // work"). after() runs once the response is sent.
               const sess = await auth();
-              if (sess?.user?.id) {
-                try {
-                  await prisma.staff.update({
-                    where: { id: sess.user.id },
-                    data: { sessionVersion: { increment: 1 } },
-                  });
-                } catch {
-                  // swallow — sign-out proceeds either way
-                }
+              const userId = sess?.user?.id;
+              if (userId) {
+                after(async () => {
+                  try {
+                    await prisma.staff.update({
+                      where: { id: userId },
+                      data: { sessionVersion: { increment: 1 } },
+                    });
+                  } catch {
+                    // swallow — sign-out proceeds either way
+                  }
+                });
               }
               await signOut({ redirectTo: "/login" });
             }}

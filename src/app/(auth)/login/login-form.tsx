@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,6 @@ import { toast } from "sonner";
 // glow orbs behind the card.
 
 export function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("from") ?? "/dashboard";
   const [email, setEmail] = useState("");
@@ -31,13 +30,17 @@ export function LoginForm() {
       password,
       redirect: false,
     });
-    setPending(false);
     if (!res || res.error) {
+      setPending(false);
       toast.error("Invalid email or password");
       return;
     }
-    router.push(callbackUrl);
-    router.refresh();
+    // Full page load, not router.push: middleware re-checks the session cookie
+    // on every navigation, and a soft navigation can race the cookie the
+    // signIn above just set — the first click would then bounce back to
+    // /login. A full load always sends the settled cookie. Leave `pending`
+    // set so the button stays disabled until the new page takes over.
+    window.location.assign(callbackUrl);
   }
 
   return (

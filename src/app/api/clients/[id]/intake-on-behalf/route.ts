@@ -33,6 +33,7 @@ const intakeSchema = z.object({
     .refine((s) => new Date(s) <= new Date(), "dob_in_future"),
   age: z.coerce.number().int().min(0).max(120).optional(),
   sex: z.enum(["M", "F", "OTHER"], { message: "sex_required" }),
+  preferredTherapistGender: z.enum(["M", "F", "NO_PREFERENCE"]).optional(),
   occupation: z.string().max(120).optional(),
   sport: z.string().max(120).optional(),
   addressLine1: z.string().trim().min(1, "address_line1_required").max(200),
@@ -125,6 +126,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     updateData.age = computedAge;
   }
   if (!client.sex) updateData.sex = f.sex;
+  if (!client.preferredTherapistGender && f.preferredTherapistGender)
+    updateData.preferredTherapistGender = f.preferredTherapistGender;
   if (!client.occupation && f.occupation) updateData.occupation = f.occupation;
   if (!client.sport && f.sport) updateData.sport = f.sport;
   if (!client.address) {
@@ -180,6 +183,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       "dob",
       "age",
       "sex",
+      "preferredTherapistGender",
       "occupation",
       "sport",
       "address",

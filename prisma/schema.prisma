@@ -182,6 +182,9 @@ model Staff {
   isActive         Boolean @default(true)
   color            String? // hex (#RRGGBB) calendar colour; null falls back to a deterministic palette colour derived from id
   signatureDataUrl String? // PNG base64 — used to auto-stamp signature on PDFs
+  // M | F | OTHER, matching Client.sex. Compared against a patient's
+  // preferredTherapistGender at assignment. Null = not on file = no warning.
+  gender           String?
 
   // Bumped on logout / "sign out everywhere" / role change. JWTs carry the
   // version they were minted at; api-auth rejects a JWT whose `sv` claim is
@@ -226,6 +229,9 @@ model Client {
   age              Int?
   sex              String?
   dominance        String? // RIGHT | LEFT | AMBI
+  // M | F | NO_PREFERENCE. Flags (never blocks) a mismatch when FO assigns a
+  // therapist. Null/NO_PREFERENCE both mean "no warning".
+  preferredTherapistGender String?
   occupation       String?
   sport            String?
   maritalStatus    String?
@@ -326,9 +332,10 @@ model IntakeForm {
   consentMethod                  String? // PHYSICAL_SCAN | DIGITAL_PAD
 
   // Minor (age < 18) parental/guardian consent capture.
-  guardianConsent      Boolean @default(false)
-  guardianName         String?
-  guardianRelationship String?
+  guardianConsent           Boolean @default(false)
+  guardianName              String?
+  guardianRelationship      String?
+  guardianSignatureDataUrl  String? // guardian signature (digital pad or scan)
 
   frontOfficeExecId String?
 

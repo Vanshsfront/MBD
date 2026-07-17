@@ -1,9 +1,10 @@
 "use client";
 
-// Versioned Terms of Service modal. Agreement is only possible after the user
-// scrolls the active legal document to the bottom.
+// Versioned Terms of Service modal. Reading is optional — the intake form's
+// checkbox ticks directly, and this dialog is here for anyone who wants the
+// full text. Which version was agreed to, and when, is still recorded.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -33,8 +34,6 @@ export function TermsModal({ open, onOpenChange, agreed = false, onAgree }: Prop
   const [version, setVersion] = useState<string | null>(null);
   const [effectiveDate, setEffectiveDate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [scrolledToBottom, setScrolledToBottom] = useState(false);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open || content !== null) return;
@@ -60,19 +59,6 @@ export function TermsModal({ open, onOpenChange, agreed = false, onAgree }: Prop
     };
   }, [open, content]);
 
-  useEffect(() => {
-    if (!open) return;
-    void Promise.resolve().then(() => setScrolledToBottom(false));
-  }, [open]);
-
-  function handleScroll() {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
-      setScrolledToBottom(true);
-    }
-  }
-
   function agree() {
     onAgree?.();
     onOpenChange(false);
@@ -84,11 +70,7 @@ export function TermsModal({ open, onOpenChange, agreed = false, onAgree }: Prop
         <DialogHeader>
           <DialogTitle>Terms of Service</DialogTitle>
         </DialogHeader>
-        <div
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className="-mx-6 max-h-[60vh] overflow-y-auto border-y px-6 py-4"
-        >
+        <div className="-mx-6 max-h-[60vh] overflow-y-auto border-y px-6 py-4">
           {error ? (
             <p className="text-sm text-destructive">
               Could not load terms ({error}). Please ask the front desk for a copy.
@@ -111,12 +93,8 @@ export function TermsModal({ open, onOpenChange, agreed = false, onAgree }: Prop
           <DialogClose asChild>
             <Button type="button" variant="outline">Close</Button>
           </DialogClose>
-          <Button
-            type="button"
-            disabled={agreed || !content || !scrolledToBottom}
-            onClick={agree}
-          >
-            {agreed ? "Agreed" : scrolledToBottom ? "I agree" : "Scroll to agree"}
+          <Button type="button" disabled={agreed || !content} onClick={agree}>
+            {agreed ? "Agreed" : "I agree"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -275,7 +275,51 @@ async function main() {
   assertTextCell(proformaSheet, "J24", "IGST INR 3499.20");
   assertTextCell(proformaSheet, "C57", amountInWordsInr(22939.2));
 
+  await assertTablePartsIntact([
+    ["services", servicesPath, "Invoice_Services.xlsx"],
+    ["products", productsPath, "Invoice_Products.xlsx"],
+    ["manual", manualPath, "Invoice_Manual.xlsx"],
+    ["proforma", proformaPath, "Invoice_Proforma.xlsx"],
+  ]);
+
   console.log("[smoke] all artifacts written to tmp/smoke/ and invoice cells verified");
+}
+
+/**
+ * Guards the fix for Excel's "we found a problem with some content" repair
+ * prompt. ExcelJS rewrites the templates' embedded lookup table with
+ * headerRowCount="0" + totalsRowShown="1" while keeping a header-spanning ref
+ * and an autoFilter — a contradiction Excel offers to repair. renderInvoice
+ * copies the template's table parts back in verbatim; this asserts it stuck.
+ *
+ * Byte-identical is the right bar: we never touch the MasterData sheet the
+ * table lives on, so any difference at all means the round-trip damaged it.
+ */
+async function assertTablePartsIntact(
+  cases: Array<[flavor: string, renderedPath: string, templateName: string]>,
+): Promise<void> {
+  for (const [flavor, renderedPath, templateName] of cases) {
+    const templateZip = new PizZip(
+      await fs.readFile(path.join(process.cwd(), "templates", templateName)),
+    );
+    const renderedZip = new PizZip(await fs.readFile(renderedPath));
+    const tableParts = Object.keys(templateZip.files).filter((n) =>
+      /^xl\/tables\/.*\.xml$/.test(n),
+    );
+    assert.ok(tableParts.length > 0, `${templateName} should carry a table part`);
+
+    for (const part of tableParts) {
+      const expected = templateZip.file(part)!.asText();
+      const actualFile = renderedZip.file(part);
+      assert.ok(actualFile, `${flavor}: ${part} missing from rendered invoice`);
+      assert.equal(
+        actualFile.asText(),
+        expected,
+        `${flavor}: ${part} differs from the template — Excel will prompt to repair`,
+      );
+    }
+    console.log(`[smoke] ${flavor}: ${tableParts.length} table part(s) intact`);
+  }
 }
 
 main().catch((err) => {

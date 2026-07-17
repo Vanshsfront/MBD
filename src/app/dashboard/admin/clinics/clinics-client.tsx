@@ -17,6 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SELECT_NONE } from "@/lib/select-styles";
 import { readApiError } from "@/lib/error-messages";
 
@@ -25,6 +32,14 @@ interface CentreRow {
   name: string;
   slug: string;
   location: string;
+  state: string;
+  contactPhone: string;
+  gstNumber: string;
+  panNumber: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankIfsc: string;
+  bankBranch: string;
   isActive: boolean;
   staffCount: number;
   clientCount: number;
@@ -34,6 +49,7 @@ interface CentreRow {
 export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [editing, setEditing] = useState<CentreRow | null>(null);
   const [form, setForm] = useState({
     name: "",
     slug: "",
@@ -155,7 +171,16 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
                       {c.location} · {c.staffCount} staff · {c.serviceCount} services ·{" "}
                       {c.clientCount} patients
                     </p>
+                    {c.state.trim() === "" ? (
+                      <p className="mt-1 text-xs font-medium text-orange-800">
+                        ⚠ No state on file — invoices and packages can&apos;t be created for this
+                        clinic until you add one.
+                      </p>
+                    ) : null}
                   </div>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(c)}>
+                    Edit
+                  </Button>
                 </div>
               </li>
             ))}
@@ -259,6 +284,170 @@ export function ClinicsAdminView({ centres }: { centres: CentreRow[] }) {
           </form>
         </CardContent>
       </Card>
+
+      {editing ? (
+        <EditClinicDialog
+          centre={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// Edit an existing clinic. Slug is intentionally absent — it's baked into
+// client codes and invoice numbers, so it stays create-time-only.
+function EditClinicDialog({
+  centre,
+  onClose,
+  onSaved,
+}: {
+  centre: CentreRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    name: centre.name,
+    location: centre.location,
+    state: centre.state,
+    contactPhone: centre.contactPhone,
+    gstNumber: centre.gstNumber,
+    panNumber: centre.panNumber,
+    bankName: centre.bankName,
+    bankAccountNumber: centre.bankAccountNumber,
+    bankIfsc: centre.bankIfsc,
+    bankBranch: centre.bankBranch,
+    isActive: centre.isActive,
+  });
+
+  function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
+    setForm((p) => ({ ...p, [k]: v }));
+  }
+
+  async function save() {
+    if (!form.name.trim() || !form.location.trim() || !form.state.trim()) {
+      toast.error("Name, location and state are required");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/clinics", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: centre.id,
+          name: form.name.trim(),
+          location: form.location.trim(),
+          state: form.state.trim(),
+          contactPhone: form.contactPhone.trim() || null,
+          gstNumber: form.gstNumber.trim() || null,
+          panNumber: form.panNumber.trim() || null,
+          bankName: form.bankName.trim() || null,
+          bankAccountNumber: form.bankAccountNumber.trim() || null,
+          bankIfsc: form.bankIfsc.trim() || null,
+          bankBranch: form.bankBranch.trim() || null,
+          isActive: form.isActive,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(await readApiError(res, { fallback: "Couldn't save the clinic." }));
+      }
+      toast.success("Clinic updated");
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            Edit {centre.name} ({centre.slug})
+          </DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Name</Label>
+            <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Location</Label>
+            <Input value={form.location} onChange={(e) => set("location", e.target.value)} />
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>State</Label>
+            <Input
+              value={form.state}
+              onChange={(e) => set("state", e.target.value)}
+              placeholder="e.g. Maharashtra"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Used to decide CGST+SGST (same state as the patient) vs IGST (different state).
+              Invoices can&apos;t be created without it.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Contact phone</Label>
+            <Input
+              value={form.contactPhone}
+              onChange={(e) => set("contactPhone", e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>GST number</Label>
+            <Input value={form.gstNumber} onChange={(e) => set("gstNumber", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>PAN</Label>
+            <Input value={form.panNumber} onChange={(e) => set("panNumber", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Bank name</Label>
+            <Input value={form.bankName} onChange={(e) => set("bankName", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Account #</Label>
+            <Input
+              value={form.bankAccountNumber}
+              onChange={(e) => set("bankAccountNumber", e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>IFSC</Label>
+            <Input value={form.bankIfsc} onChange={(e) => set("bankIfsc", e.target.value)} />
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Branch</Label>
+            <Input value={form.bankBranch} onChange={(e) => set("bankBranch", e.target.value)} />
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 md:col-span-2">
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={(e) => set("isActive", e.target.checked)}
+              className="h-4 w-4"
+            />
+            <span className="text-sm">Active</span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => void save()} disabled={busy}>
+            {busy ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

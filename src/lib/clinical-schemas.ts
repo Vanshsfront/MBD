@@ -274,6 +274,10 @@ const PhysicianConsultationSchema = z
       })
       .partial()
       .optional(),
+    // Free-text escape hatch alongside the eight presets — a doctor ordering
+    // anything outside that list previously had nowhere to record it. The
+    // physiotherapy form's `investigations` field is the precedent.
+    labOther: z.string().default(""),
     imaging: z
       .object({
         xray: checkbox,
@@ -285,6 +289,22 @@ const PhysicianConsultationSchema = z
       })
       .partial()
       .optional(),
+    // Which area/body part each ordered scan relates to ("X-Ray of chest" vs
+    // "of hip"). The paper form has a blank next to each imaging item for
+    // exactly this; the digital form never had an equivalent. Optional — a tick
+    // with no detail is still valid.
+    imagingDetail: z
+      .object({
+        xray: z.string(),
+        mri: z.string(),
+        ct: z.string(),
+        usg: z.string(),
+        ecg: z.string(),
+        dexa: z.string(),
+      })
+      .partial()
+      .optional(),
+    imagingOther: z.string().default(""),
     ref: z
       .object({
         physiotherapy: checkbox,

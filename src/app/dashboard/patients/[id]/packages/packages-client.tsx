@@ -48,7 +48,9 @@ interface PackageRow {
 interface ConsultationRow {
   id: string;
   date: string;
+  consultantId: string | null;
   consultantName: string | null;
+  consultantDepartmentId: string | null;
   recommendedSessions: number | null;
   templateKey: string;
   // Revamp Phase 4 — staged service mix persisted on the row.
@@ -61,6 +63,7 @@ interface ServiceOption {
   basePrice: number;
   participantCount: number;
   durationMin: number | null;
+  departmentId: string;
   department: string | null;
 }
 
@@ -73,12 +76,27 @@ interface StaffOption {
   id: string;
   name: string;
   designation: string | null;
+  departmentId: string | null;
 }
 
 interface MixItem {
   serviceId: string;
   count: number;
   consultantId?: string;
+  /** 0–1 fraction, matching the standalone invoice form and the API. */
+  lineDiscount?: number;
+}
+
+/**
+ * A therapist's recommendation, resolved against the live catalogue. A service
+ * that's since been deactivated can't be added to a package — but staff still
+ * need to know it was recommended, rather than have it silently vanish.
+ */
+interface ResolvedRecommendation {
+  serviceId: string;
+  serviceName: string;
+  count: number;
+  available: boolean;
 }
 
 interface PendingSuggestion {
@@ -86,6 +104,12 @@ interface PendingSuggestion {
   note: string;
   suggestedByName: string;
   createdAt: string;
+}
+
+/** Mirrors the server: qty × per-amount, less this line's own discount. */
+function lineTotalFor(m: MixItem, svc: ServiceOption): number {
+  const gross = m.count * svc.participantCount * svc.basePrice;
+  return gross * (1 - (m.lineDiscount ?? 0));
 }
 
 interface Props {
@@ -111,20 +135,31 @@ export function PackagesView({
 }: Props) {
   const router = useRouter();
 
-  // Hydrate the mix from the chosen consultation's persisted recommendation
-  // payload (Phase 4 column). Any service the therapist recommended but that
-  // is no longer active in the catalog is silently dropped.
-  function recommendationsFor(consultationId: string): MixItem[] {
+  // Resolve one consultation's persisted recommendation payload (Phase 4
+  // column) against the live catalogue. Unavailable services are kept and
+  // marked rather than dropped — the therapist's original note is the whole
+  // point, and a silent omission leaves FO building an incomplete package with
+  // no way to know.
+  function recommendationsFor(consultationId: string): ResolvedRecommendation[] {
     const c = consultations.find((x) => x.id === consultationId);
     if (!c?.recommendedServicesJson) return [];
     try {
       const arr = JSON.parse(c.recommendedServicesJson) as Array<{
         serviceId: string;
+        serviceName?: string;
         count: number;
       }>;
-      return arr
-        .filter((x) => services.some((s) => s.id === x.serviceId))
-        .map((x) => ({ serviceId: x.serviceId, count: x.count }));
+      return arr.map((x) => {
+        const svc = services.find((s) => s.id === x.serviceId);
+        return {
+          serviceId: x.serviceId,
+          // serviceName is persisted alongside the id (RecommendationItemSchema),
+          // so a deactivated service can still be named on screen.
+          serviceName: svc?.name ?? x.serviceName ?? "Unknown service",
+          count: x.count,
+          available: Boolean(svc),
+        };
+      });
     } catch {
       return [];
     }
@@ -132,25 +167,56 @@ export function PackagesView({
 
   const initialConsultationId = consultations[0]?.id ?? "";
   const [consultationId, setConsultationId] = useState<string>(initialConsultationId);
-  const [mix, setMix] = useState<MixItem[]>(() => recommendationsFor(initialConsultationId));
+  const [mix, setMix] = useState<MixItem[]>(() =>
+    recommendationsFor(initialConsultationId)
+      .filter((r) => r.available)
+      .map((r) => ({ serviceId: r.serviceId, count: r.count })),
+  );
   const [discountPercent, setDiscountPercent] = useState(0);
   const [promoCode, setPromoCode] = useState("");
   const [pending, setPending] = useState(false);
   const [pendingProforma, setPendingProforma] = useState(false);
-  const recommendationsAvailable = useMemo(
-    () => recommendationsFor(consultationId),
+
+  // Every recent consultation that carries recommendations, so a package
+  // spanning two departments (physio + nutrition, recommended separately)
+  // doesn't need FO to switch back and forth between them.
+  const recommendationGroups = useMemo(
+    () =>
+      consultations
+        .map((c) => ({ consultation: c, items: recommendationsFor(c.id) }))
+        .filter((g) => g.items.length > 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [consultationId, consultations],
+    [consultations, services],
   );
 
-  function applyRecommendations() {
-    if (recommendationsAvailable.length === 0) {
-      toast.message("No recommendations on the linked consultation.");
+  const recommendationsAvailable = useMemo(
+    () => recommendationsFor(consultationId).filter((r) => r.available),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [consultationId, consultations, services],
+  );
+
+  // Add a group's recommendations to the mix without discarding what's already
+  // there — that's what makes combining two therapists' suggestions possible.
+  function applyRecommendationGroup(items: ResolvedRecommendation[]) {
+    const usable = items.filter((r) => r.available);
+    if (usable.length === 0) {
+      toast.message("No available services in this recommendation.");
       return;
     }
-    setMix(recommendationsAvailable);
+    let added = 0;
+    setMix((prev) => {
+      const next = [...prev];
+      for (const r of usable) {
+        if (next.some((m) => m.serviceId === r.serviceId)) continue;
+        next.push({ serviceId: r.serviceId, count: r.count });
+        added++;
+      }
+      return next;
+    });
+    const skipped = items.length - usable.length;
     toast.success(
-      `Applied ${recommendationsAvailable.length} recommendation${recommendationsAvailable.length === 1 ? "" : "s"} from consultation`,
+      `Added ${added} service${added === 1 ? "" : "s"}` +
+        (skipped > 0 ? ` · ${skipped} unavailable and left out` : ""),
     );
   }
 
@@ -159,7 +225,7 @@ export function PackagesView({
     for (const m of mix) {
       const svc = services.find((s) => s.id === m.serviceId);
       if (!svc) continue;
-      subtotal += m.count * svc.participantCount * svc.basePrice;
+      subtotal += lineTotalFor(m, svc);
     }
     const afterDisc = subtotal * (1 - discountPercent / 100);
     return { subtotal, afterDisc };
@@ -190,14 +256,66 @@ export function PackagesView({
       ),
     );
   }
+  function setLineDiscount(serviceId: string, percent: number) {
+    const clamped = Math.max(0, Math.min(100, percent)) / 100;
+    setMix((prev) =>
+      prev.map((m) => (m.serviceId === serviceId ? { ...m, lineDiscount: clamped } : m)),
+    );
+  }
+
+  const linkedConsultation = consultations.find((c) => c.id === consultationId) ?? null;
+
+  /**
+   * What a line's consultant actually resolves to, mirroring the server's
+   * `item.consultantId ?? consultation.consultantId` fallback.
+   *
+   * Leaving a line on "use linked consultation" used to render as blank, which
+   * reads as "nothing was picked" even though something was. Worse, a line
+   * whose service belongs to a different department than the linked
+   * consultant's would silently inherit the wrong clinician — so those are
+   * surfaced for an explicit pick instead of being defaulted.
+   */
+  function resolveConsultant(m: MixItem, svc: ServiceOption): {
+    name: string | null;
+    inherited: boolean;
+    needsPick: boolean;
+  } {
+    if (m.consultantId) {
+      const picked = staff.find((s) => s.id === m.consultantId);
+      return { name: picked?.name ?? null, inherited: false, needsPick: false };
+    }
+    if (!linkedConsultation?.consultantId) {
+      return { name: null, inherited: false, needsPick: true };
+    }
+    const crossDepartment =
+      linkedConsultation.consultantDepartmentId !== null &&
+      linkedConsultation.consultantDepartmentId !== svc.departmentId;
+    if (crossDepartment) {
+      return { name: null, inherited: false, needsPick: true };
+    }
+    return { name: linkedConsultation.consultantName, inherited: true, needsPick: false };
+  }
+
+  const linesNeedingConsultant = useMemo(
+    () =>
+      mix.filter((m) => {
+        const svc = services.find((s) => s.id === m.serviceId);
+        return svc ? resolveConsultant(m, svc).needsPick : false;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mix, services, staff, linkedConsultation],
+  );
 
   async function create() {
     if (mix.length === 0) {
       toast.error("Add at least one service");
       return;
     }
-    if (!consultationId && mix.some((m) => !m.consultantId)) {
-      toast.error("Pick a consultant for every service, or link a consultation.");
+    // Covers both "no consultation linked at all" and "this line's service is
+    // a different department than the linked consultant" — neither can be
+    // safely defaulted.
+    if (linesNeedingConsultant.length > 0) {
+      toast.error("Pick a consultant for every highlighted service.");
       return;
     }
     setPending(true);
@@ -233,9 +351,9 @@ export function PackagesView({
   }
 
   async function createProformaFromRecommendations() {
-    const recs = recommendationsFor(consultationId);
+    const recs = recommendationsFor(consultationId).filter((r) => r.available);
     if (recs.length === 0) {
-      toast.message("No recommendations on the linked consultation.");
+      toast.message("No available recommendations on the linked consultation.");
       return;
     }
     setPendingProforma(true);
@@ -355,23 +473,68 @@ export function PackagesView({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={applyRecommendations}
-                    disabled={recommendationsAvailable.length === 0}
-                  >
-                    {recommendationsAvailable.length > 0
-                      ? `Use therapist recommendations (${recommendationsAvailable.length})`
-                      : "No recommendations"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
                     onClick={createProformaFromRecommendations}
                     disabled={pendingProforma || recommendationsAvailable.length === 0}
                   >
                     {pendingProforma ? "Creating proforma…" : "Proforma of suggestions"}
                   </Button>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  The linked consultation sets each line&apos;s default consultant and is what the
+                  proforma is built from. Recommendations from any recent consultation can be added
+                  below.
+                </p>
+              </div>
+            ) : null}
+
+            {recommendationGroups.length > 0 ? (
+              <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Therapist recommendations
+                </p>
+                {recommendationGroups.map(({ consultation: c, items }) => {
+                  const usable = items.filter((r) => r.available);
+                  return (
+                    <div
+                      key={c.id}
+                      className="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-background px-3 py-2"
+                    >
+                      <div className="min-w-[200px] flex-1">
+                        <p className="text-sm font-medium">
+                          {c.consultantName ?? "Unknown clinician"}
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            {new Date(c.date).toLocaleDateString("en-IN")} · {c.templateKey}
+                          </span>
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {items.map((r) => (
+                            <li key={r.serviceId} className="text-xs">
+                              {r.available ? (
+                                <span className="text-muted-foreground">
+                                  {r.serviceName} × {r.count}
+                                </span>
+                              ) : (
+                                <span className="text-orange-800">
+                                  {r.serviceName} × {r.count} — no longer offered, can&apos;t be
+                                  added
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => applyRecommendationGroup(items)}
+                        disabled={usable.length === 0}
+                      >
+                        {usable.length > 0 ? `Add ${usable.length} to package` : "None available"}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
 
@@ -398,13 +561,16 @@ export function PackagesView({
                 {mix.map((m) => {
                   const svc = services.find((s) => s.id === m.serviceId);
                   if (!svc) return null;
-                  const lineTotal = m.count * svc.participantCount * svc.basePrice;
+                  const lineTotal = lineTotalFor(m, svc);
+                  const resolved = resolveConsultant(m, svc);
                   return (
                     <li
                       key={m.serviceId}
-                      className="flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm"
+                      className={`flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm ${
+                        resolved.needsPick ? "border-orange-200 bg-orange-50" : ""
+                      }`}
                     >
-                      <div className="flex-1">
+                      <div className="min-w-[160px] flex-1">
                         <p className="font-medium">{svc.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {formatINR(svc.basePrice)} ×
@@ -419,11 +585,17 @@ export function PackagesView({
                           value={m.consultantId ?? SELECT_NONE}
                           onValueChange={(v) => setConsultant(m.serviceId, v)}
                         >
-                          <SelectTrigger>
+                          <SelectTrigger
+                            className={resolved.needsPick ? "border-orange-300" : undefined}
+                          >
                             <SelectValue placeholder="Consultant" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={SELECT_NONE}>Use linked consultation</SelectItem>
+                            <SelectItem value={SELECT_NONE}>
+                              {linkedConsultation?.consultantName
+                                ? `Use linked consultation (${linkedConsultation.consultantName})`
+                                : "Use linked consultation"}
+                            </SelectItem>
                             {staff.map((s) => (
                               <SelectItem key={s.id} value={s.id}>
                                 {s.name}
@@ -432,6 +604,18 @@ export function PackagesView({
                             ))}
                           </SelectContent>
                         </Select>
+                        {resolved.inherited && resolved.name ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            From linked consultation: <strong>{resolved.name}</strong>
+                          </p>
+                        ) : null}
+                        {resolved.needsPick ? (
+                          <p className="mt-1 text-xs font-medium text-orange-800">
+                            {linkedConsultation?.consultantName
+                              ? `${svc.department ?? "This service"} isn't ${linkedConsultation.consultantName}'s department — pick a consultant.`
+                              : "Pick a consultant for this service."}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <Input
@@ -441,8 +625,22 @@ export function PackagesView({
                           value={m.count}
                           onChange={(e) => setCount(m.serviceId, Number(e.target.value))}
                           className="w-20"
+                          aria-label={`Sessions for ${svc.name}`}
                         />
                         <span className="text-xs text-muted-foreground">sessions</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step="1"
+                          value={Math.round((m.lineDiscount ?? 0) * 100)}
+                          onChange={(e) => setLineDiscount(m.serviceId, Number(e.target.value))}
+                          className="w-20"
+                          aria-label={`Discount % for ${svc.name}`}
+                        />
+                        <span className="text-xs text-muted-foreground">% off</span>
                       </div>
                       <span className="w-24 text-right font-medium tabular-nums">
                         {formatINR(lineTotal)}

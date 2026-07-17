@@ -7,6 +7,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import PizZip from "pizzip";
 import { CLINIC_TIME_ZONE } from "@/lib/date-format";
 import { INVOICE_TEMPLATES, type InvoiceFlavor } from "@/lib/templates/keys";
 
@@ -224,7 +225,39 @@ export async function renderInvoice(args: RenderInvoiceArgs): Promise<Buffer> {
   writeTotals(sheet, map, args);
 
   const out = await wb.xlsx.writeBuffer();
-  return Buffer.from(out);
+  return restoreTableParts(Buffer.from(out), buf);
+}
+
+/**
+ * Repairs ExcelJS's table round-trip, which otherwise makes Excel show
+ * "We found a problem with some content in this file" on every download.
+ *
+ * Each invoice template keeps a lookup table (ServiceTable / ProductTable) on
+ * the MasterData sheet, with its header row at row 2. ExcelJS re-serializes
+ * that definition wrong: it writes headerRowCount="0" and totalsRowShown="1"
+ * while keeping the original ref (which spans the header row) *and* an
+ * <autoFilter>, which is invalid on a table with no header row. Excel sees the
+ * contradiction and offers to repair.
+ *
+ * We only ever write to worksheets[0] (InvoiceGenerator) and never touch
+ * MasterData or the table, so copying the template's table parts back in
+ * verbatim restores exactly what Excel expects.
+ *
+ * (Note: `xl/calcChain.xml` is *not* involved — ExcelJS drops it on write and
+ * removes it from [Content_Types].xml, so there's no stale formula index.)
+ */
+function restoreTableParts(rendered: Buffer, template: Buffer): Buffer {
+  const source = new PizZip(template);
+  const tableParts = Object.keys(source.files).filter((name) =>
+    /^xl\/tables\/.*\.xml$/.test(name),
+  );
+  if (tableParts.length === 0) return rendered;
+
+  const out = new PizZip(rendered);
+  for (const name of tableParts) {
+    out.file(name, source.file(name)!.asNodeBuffer());
+  }
+  return out.generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
 function writeHeader(

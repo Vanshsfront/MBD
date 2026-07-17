@@ -40,6 +40,8 @@ interface DraftClient {
   phone: string;
   age: number | null;
   sex: string | null;
+  /** M | F | NO_PREFERENCE, or null. Only M/F ever produce a warning. */
+  preferredTherapistGender: string | null;
   email: string | null;
   createdAt: string;
   selectedCategories: ServiceCategoryKey[];
@@ -58,6 +60,8 @@ interface TherapistOption {
   role: string;
   designation: string | null;
   department: string | null;
+  /** M | F | OTHER, or null when not yet on file. */
+  gender: string | null;
 }
 
 interface ReferralOption {
@@ -72,6 +76,22 @@ interface Props {
 }
 
 type Step = "intake" | "assign" | "consent" | "done";
+
+/**
+ * True when the patient asked for a specific therapist gender and this
+ * therapist isn't it.
+ *
+ * A flag, never a block — there may be a good reason to proceed (nobody of the
+ * preferred gender is in that day), but FO shouldn't be able to do it without
+ * seeing it. Deliberately silent when either side is unknown: no stated
+ * preference, or a therapist whose gender an admin hasn't filled in yet.
+ */
+function genderMismatch(client: DraftClient, therapist: TherapistOption): boolean {
+  const preferred = client.preferredTherapistGender;
+  if (preferred !== "M" && preferred !== "F") return false;
+  if (!therapist.gender) return false;
+  return therapist.gender !== preferred;
+}
 
 function initialStepFor(d: DraftClient | null): Step {
   if (!d) return "assign";
@@ -399,6 +419,14 @@ function AssignPanel({
 
         <section>
           <Label className="mb-2 block">Assign therapist(s)</Label>
+          {client.preferredTherapistGender === "M" ||
+          client.preferredTherapistGender === "F" ? (
+            <p className="mb-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-900">
+              Patient asked for a{" "}
+              {client.preferredTherapistGender === "F" ? "female" : "male"} therapist. Mismatched
+              therapists are flagged below — you can still assign one if needed.
+            </p>
+          ) : null}
           <p className="mb-3 text-xs text-muted-foreground">
             {eligibleDepartments.length === 0
               ? "Browse any department below."
@@ -472,6 +500,15 @@ function AssignPanel({
                                 <p className="text-xs text-muted-foreground">
                                   {t.designation ?? t.role}
                                 </p>
+                                {genderMismatch(client, t) ? (
+                                  <p className="text-xs font-medium text-orange-800">
+                                    ⚠ Patient asked for a{" "}
+                                    {client.preferredTherapistGender === "F"
+                                      ? "female"
+                                      : "male"}{" "}
+                                    therapist
+                                  </p>
+                                ) : null}
                                 {matchingCategories.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
                                     {matchingCategories.map((c) => (
@@ -533,8 +570,235 @@ function AssignPanel({
   );
 }
 
+type SignatureMethod = "DIGITAL_PAD" | "PHYSICAL_SCAN";
+
+/**
+ * Both capture methods are retained side by side, and the selected `method`
+ * decides which one is used. That's deliberate: the canvas is unmounted
+ * whenever the upload option is shown, which destroys the SignaturePad and
+ * everything drawn on it — so if the pad's image only lived on the canvas,
+ * merely glancing at the other tab would silently discard a signature the
+ * patient had already given.
+ */
+interface SignatureState {
+  method: SignatureMethod;
+  padDataUrl: string | null;
+  scanDataUrl: string | null;
+}
+
+const EMPTY_SIGNATURE: SignatureState = {
+  method: "DIGITAL_PAD",
+  padDataUrl: null,
+  scanDataUrl: null,
+};
+
+function activeSignatureOf(s: SignatureState): string | null {
+  return s.method === "DIGITAL_PAD" ? s.padDataUrl : s.scanDataUrl;
+}
+
+function SignatureCapture({
+  value,
+  onChange,
+  onRearm,
+  showDisclaimer = false,
+  uploadLabel,
+}: {
+  value: SignatureState;
+  onChange: (next: SignatureState) => void;
+  /** Called whenever the captured signature changes, to invalidate a preview. */
+  onRearm: () => void;
+  showDisclaimer?: boolean;
+  uploadLabel: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const padRef = useRef<SignaturePad | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Keep the latest value/handlers reachable from the pad effect without making
+  // them dependencies — re-creating the pad mid-signature would wipe it. This
+  // sync must be declared before that effect so it has run by the time the pad
+  // is (re)built.
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  const onRearmRef = useRef(onRearm);
+  useEffect(() => {
+    valueRef.current = value;
+    onChangeRef.current = onChange;
+    onRearmRef.current = onRearm;
+  });
+
+  useEffect(() => {
+    if (value.method !== "DIGITAL_PAD") return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = canvas.offsetWidth * ratio;
+    canvas.height = canvas.offsetHeight * ratio;
+    canvas.getContext("2d")?.scale(ratio, ratio);
+    const pad = new SignaturePad(canvas, { backgroundColor: "rgba(255,255,255,0)" });
+    padRef.current = pad;
+
+    // Repaint whatever was captured before this canvas last unmounted.
+    const existing = valueRef.current.padDataUrl;
+    if (existing) {
+      void pad.fromDataURL(existing, {
+        width: canvas.offsetWidth,
+        height: canvas.offsetHeight,
+      });
+    }
+
+    // Capture on every stroke, so state is always current even if the canvas
+    // is torn down a moment later.
+    const onEndStroke = () => {
+      onChangeRef.current({ ...valueRef.current, padDataUrl: pad.toDataURL("image/png") });
+      onRearmRef.current();
+    };
+    pad.addEventListener("endStroke", onEndStroke);
+
+    return () => {
+      pad.removeEventListener("endStroke", onEndStroke);
+      pad.off();
+      padRef.current = null;
+    };
+  }, [value.method]);
+
+  function setMethod(method: SignatureMethod) {
+    onChange({ ...value, method });
+    onRearm();
+  }
+
+  // Explicit reset — the only paths meant to discard a captured signature.
+  function clearPad() {
+    padRef.current?.clear();
+    onChange({ ...value, padDataUrl: null });
+    onRearm();
+  }
+  function clearScan() {
+    onChange({ ...value, scanDataUrl: null });
+    if (scanInputRef.current) scanInputRef.current.value = "";
+    onRearm();
+  }
+
+  function onScanFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Only PNG/JPEG survive the render: the docx image module matches
+    // data:image/(png|jpeg) and silently substitutes a 1x1 transparent pixel
+    // for anything else, so a PDF here would "work" right up until the printed
+    // consent came out with a blank signature. Reject it at the door instead.
+    if (!/^image\/(png|jpe?g)$/.test(file.type)) {
+      toast.error("Upload a PNG or JPEG image of the signed form (not a PDF).");
+      if (scanInputRef.current) scanInputRef.current.value = "";
+      return;
+    }
+    // 10 MB cap covers a typical 12-megapixel phone photo (~6 MB JPEG) and a
+    // multi-page A4 scan, without bloating the IntakeForm.signatureDataUrl
+    // column. Anything bigger should be compressed before upload.
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File too large (max 10 MB)");
+      if (scanInputRef.current) scanInputRef.current.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      onChange({
+        ...valueRef.current,
+        scanDataUrl: typeof reader.result === "string" ? reader.result : null,
+      });
+      onRearm();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  const active = activeSignatureOf(value);
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={value.method === "DIGITAL_PAD" ? "default" : "outline"}
+            onClick={() => setMethod("DIGITAL_PAD")}
+          >
+            Digital pad
+            {value.padDataUrl ? <span className="ml-1.5 text-xs">✓</span> : null}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={value.method === "PHYSICAL_SCAN" ? "default" : "outline"}
+            onClick={() => setMethod("PHYSICAL_SCAN")}
+          >
+            Upload scan
+            {value.scanDataUrl ? <span className="ml-1.5 text-xs">✓</span> : null}
+          </Button>
+        </div>
+        {active ? (
+          <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-900">
+            ✓ Signature captured
+            {value.method === "DIGITAL_PAD" ? " on the pad" : " from the uploaded scan"}.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No signature captured yet
+            {value.method === "DIGITAL_PAD"
+              ? " — sign on the pad below."
+              : " — upload a photo or scan of the signed form."}
+          </p>
+        )}
+      </div>
+
+      {value.method === "DIGITAL_PAD" ? (
+        <section className="space-y-2">
+          {showDisclaimer ? (
+            <p className="rounded-md bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
+              Digital signature is for record-keeping only. Not legally binding without an
+              audit-trailed e-signature provider.
+            </p>
+          ) : null}
+          <div className="rounded-md border bg-white">
+            <canvas ref={canvasRef} className="block h-[220px] w-full touch-none" />
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" size="sm" variant="ghost" onClick={clearPad}>
+              Clear
+            </Button>
+          </div>
+        </section>
+      ) : (
+        <section className="space-y-2">
+          <Label>{uploadLabel}</Label>
+          <input
+            ref={scanInputRef}
+            type="file"
+            accept="image/png,image/jpeg"
+            onChange={onScanFileChosen}
+            className="block w-full text-sm"
+          />
+          <p className="text-xs text-muted-foreground">PNG or JPEG.</p>
+          {value.scanDataUrl ? (
+            <>
+              <img
+                src={value.scanDataUrl}
+                alt="Uploaded signed consent"
+                className="max-h-64 rounded-md border object-contain"
+              />
+              <div className="flex justify-end">
+                <Button type="button" size="sm" variant="ghost" onClick={clearScan}>
+                  Clear
+                </Button>
+              </div>
+            </>
+          ) : null}
+        </section>
+      )}
+    </div>
+  );
+}
+
 function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => void }) {
-  const [method, setMethod] = useState<"DIGITAL_PAD" | "PHYSICAL_SCAN">("DIGITAL_PAD");
   const [pending, setPending] = useState(false);
   // Two-stage preview-then-finalize state:
   //   capturedSignature stores the data URL once "Preview" succeeds, so
@@ -544,74 +808,64 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
   const [capturedSignature, setCapturedSignature] = useState<string | null>(null);
   const [previewed, setPreviewed] = useState(false);
 
+  const [signature, setSignature] = useState<SignatureState>(EMPTY_SIGNATURE);
+
   // Guardian consent (for minors)
   const [guardianConsent, setGuardianConsent] = useState(false);
   const [guardianName, setGuardianName] = useState("");
   const [guardianRelationship, setGuardianRelationship] = useState("");
+  const [guardianSignature, setGuardianSignature] = useState<SignatureState>(EMPTY_SIGNATURE);
 
-  // Digital pad
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const padRef = useRef<SignaturePad | null>(null);
-
-  // Scan upload
-  const [scanDataUrl, setScanDataUrl] = useState<string | null>(null);
+  const [downloadingConsent, setDownloadingConsent] = useState(false);
 
   // Compute if patient is a minor (age < 18)
   const isMinor = client.age !== null && client.age < 18;
 
-  // Re-arming: when the FO switches signature method or clears the pad we
-  // discard any previously-previewed capture so they go through the loop
-  // again. Prevents a stale signature getting finalised after a "Clear".
+  const method = signature.method;
+  // Whichever method is selected, this is the signature that would be used.
+  const activeSignature = activeSignatureOf(signature);
+  const activeGuardianSignature = activeSignatureOf(guardianSignature);
+
+  // Re-arming: the previewed-and-cached capture is only valid for the exact
+  // signature it was made from, so switching method or clearing the pad forces
+  // a fresh preview. This deliberately does NOT discard either method's
+  // captured signature — only the preview cache.
   function rearm() {
     setCapturedSignature(null);
     setPreviewed(false);
   }
 
-  useEffect(() => {
-    if (method !== "DIGITAL_PAD") return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ratio = Math.max(window.devicePixelRatio || 1, 1);
-    canvas.width = canvas.offsetWidth * ratio;
-    canvas.height = canvas.offsetHeight * ratio;
-    canvas.getContext("2d")?.scale(ratio, ratio);
-    const pad = new SignaturePad(canvas, { backgroundColor: "rgba(255,255,255,0)" });
-    padRef.current = pad;
-    return () => {
-      pad.off();
-      padRef.current = null;
-    };
-  }, [method]);
-
-  function clearPad() {
-    padRef.current?.clear();
-    rearm();
-  }
-
-  function downloadConsent() {
-    window.open(`/api/clients/${client.id}/consent-render`, "_blank");
+  // The rendered consent needs a persisted signature, which only exists after
+  // finalize. window.open() would navigate a new tab straight into the route's
+  // 422 JSON and show a blank page, reading as "the feature is broken" when
+  // it's really just being used a step early — so fetch and surface the reason.
+  async function downloadConsent() {
+    setDownloadingConsent(true);
+    try {
+      const res = await fetch(`/api/clients/${client.id}/consent-render`);
+      if (!res.ok) {
+        throw new Error(
+          await readApiError(res, { fallback: "Couldn't render the consent form." }),
+        );
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `consent-${client.firstName}-${client.lastName}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setDownloadingConsent(false);
+    }
   }
 
   function downloadTermsOfService() {
     window.open("/api/legal-documents/terms-of-service/download", "_blank");
-  }
-
-  async function onScanFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // 10 MB cap covers a typical 12-megapixel phone photo (~6 MB JPEG) and a
-    // multi-page A4 scan, without bloating the IntakeForm.signatureDataUrl
-    // column. Anything bigger should be compressed before upload.
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("File too large (max 10 MB)");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setScanDataUrl(typeof reader.result === "string" ? reader.result : null);
-      rearm();
-    };
-    reader.readAsDataURL(file);
   }
 
   function collectSignature(): string | null {
@@ -621,18 +875,15 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
       );
       return null;
     }
-    if (method === "DIGITAL_PAD") {
-      if (!padRef.current || padRef.current.isEmpty()) {
-        toast.error("Have the patient sign on the pad");
-        return null;
-      }
-      return padRef.current.toDataURL("image/png");
-    }
-    if (!scanDataUrl) {
-      toast.error("Upload the signed scan first");
+    if (!activeSignature) {
+      toast.error(
+        method === "DIGITAL_PAD"
+          ? "Have the patient sign on the pad"
+          : "Upload the signed scan first",
+      );
       return null;
     }
-    return scanDataUrl;
+    return activeSignature;
   }
 
   // Step 1: render the consent with the IN-MEMORY signature so the FO can
@@ -648,7 +899,13 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signatureDataUrl: dataUrl, method }),
+          body: JSON.stringify({
+            signatureDataUrl: dataUrl,
+            method,
+            ...(isMinor && activeGuardianSignature
+              ? { guardianSignatureDataUrl: activeGuardianSignature }
+              : {}),
+          }),
         },
       );
       if (!res.ok) {
@@ -676,6 +933,14 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
       toast.error("Guardian consent must be confirmed for minors");
       return;
     }
+    if (isMinor && !guardianName.trim()) {
+      toast.error("Enter the guardian's name");
+      return;
+    }
+    if (isMinor && !activeGuardianSignature) {
+      toast.error("Capture the guardian's signature");
+      return;
+    }
     setPending(true);
     try {
       const res = await fetch(`/api/clients/${client.id}/consent`, {
@@ -688,6 +953,7 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
             guardianConsent,
             guardianName: guardianName.trim() || undefined,
             guardianRelationship: guardianRelationship.trim() || undefined,
+            guardianSignatureDataUrl: activeGuardianSignature ?? undefined,
           }),
         }),
       });
@@ -716,74 +982,41 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
             Render the prefilled consent form for the patient to read or sign on paper.
           </p>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={downloadConsent}>
-              Download consent form (Word)
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void downloadConsent()}
+              disabled={!client.consentSigned || downloadingConsent}
+              title={
+                client.consentSigned
+                  ? undefined
+                  : "Finalize the patient's consent before downloading"
+              }
+            >
+              {downloadingConsent ? "Preparing…" : "Download consent form (Word)"}
             </Button>
             <Button size="sm" variant="outline" onClick={downloadTermsOfService}>
               Print full Terms of Service
             </Button>
           </div>
-        </section>
-
-        <section className="flex gap-2">
-          <Button
-            type="button"
-            variant={method === "DIGITAL_PAD" ? "default" : "outline"}
-            onClick={() => {
-              setMethod("DIGITAL_PAD");
-              rearm();
-            }}
-          >
-            Digital pad
-          </Button>
-          <Button
-            type="button"
-            variant={method === "PHYSICAL_SCAN" ? "default" : "outline"}
-            onClick={() => {
-              setMethod("PHYSICAL_SCAN");
-              rearm();
-            }}
-          >
-            Upload scan
-          </Button>
-        </section>
-
-        {method === "DIGITAL_PAD" ? (
-          <section className="space-y-2">
-            <p className="rounded-md bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
-              Digital signature is for record-keeping only. Not legally binding without an
-              audit-trailed e-signature provider.
+          {!client.consentSigned ? (
+            <p className="w-full text-xs text-muted-foreground">
+              The Word download includes the patient&apos;s signature, so it becomes available once
+              consent is finalized below.
             </p>
-            <div className="rounded-md border bg-white">
-              <canvas ref={canvasRef} className="block h-[220px] w-full touch-none" />
-            </div>
-            <div className="flex justify-end">
-              <Button type="button" size="sm" variant="ghost" onClick={clearPad}>
-                Clear
-              </Button>
-            </div>
-          </section>
-        ) : (
-          <section className="space-y-2">
-            <Label>Upload signed consent (photo or scan)</Label>
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={onScanFileChosen}
-              className="block w-full text-sm"
-            />
-            {scanDataUrl && scanDataUrl.startsWith("data:image") ? (
-              <img
-                src={scanDataUrl}
-                alt="Uploaded consent"
-                className="max-h-64 rounded-md border object-contain"
-              />
-            ) : null}
-            {scanDataUrl && !scanDataUrl.startsWith("data:image") ? (
-              <p className="text-xs text-muted-foreground">Scan received and ready to upload.</p>
-            ) : null}
-          </section>
-        )}
+          ) : null}
+        </section>
+
+        <section className="space-y-2">
+          <Label>Patient&apos;s signature</Label>
+          <SignatureCapture
+            value={signature}
+            onChange={setSignature}
+            onRearm={rearm}
+            showDisclaimer
+            uploadLabel="Upload signed consent (photo or scan)"
+          />
+        </section>
 
         {/* Guardian consent for minors (age < 18) */}
         {isMinor ? (
@@ -832,6 +1065,15 @@ function ConsentPanel({ client, onDone }: { client: DraftClient; onDone: () => v
                     placeholder="e.g. Mother, Father, Guardian"
                   />
                 </div>
+              </div>
+              <div className="space-y-2 rounded-md border border-orange-300 bg-white p-3">
+                <Label className="text-sm">Guardian&apos;s signature</Label>
+                <SignatureCapture
+                  value={guardianSignature}
+                  onChange={setGuardianSignature}
+                  onRearm={rearm}
+                  uploadLabel="Upload the guardian's signed consent (photo or scan)"
+                />
               </div>
             </div>
           </section>

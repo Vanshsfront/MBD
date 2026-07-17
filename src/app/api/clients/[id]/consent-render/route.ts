@@ -10,6 +10,7 @@ import { CATEGORY_KEYS, SERVICE_CATEGORIES, type ServiceCategoryKey } from "@/li
 import { phiHeaders } from "@/lib/responses";
 import { formatAddress, parseAddress } from "@/lib/address";
 import { formatPatientName } from "@/lib/patient-display";
+import { guardianBlock } from "@/lib/consent-guardian";
 import { formatClinicDate, formatClinicTime } from "@/lib/date-format";
 
 interface EmergencyJson {
@@ -137,10 +138,15 @@ export async function GET(
     },
     assignedTo: assignedNames.join(", "),
     assignedBy: auth.user.name ?? auth.user.email ?? "",
+    // Guardian block — only populated for a minor. The guardian's name and
+    // relationship were already being captured and stored but never printed,
+    // which made the minor-consent record incomplete on paper.
+    guardian: guardianBlock(intake),
     // Image-module placeholders ({{%patientSignature}} / {{%frontOffice.signature}}).
     // Patient signature is validated above (will not reach here if missing).
     // FO signature may be empty; the renderer falls back to 1x1 transparent PNG.
     patientSignature: patientSignatureDataUrl,
+    guardianSignature: intake?.guardianSignatureDataUrl ?? "",
     frontOffice: {
       name: auth.user.name ?? "",
       signature: foSignatureDataUrl,

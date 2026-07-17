@@ -27,6 +27,9 @@ export type IntakeSex = "" | "M" | "F" | "OTHER";
 // {{patient.dominance}} (see /api/consultations/[id]/render/route.ts). Empty
 // string means "not asked"; the templates render blank in that case.
 export type IntakeDominance = "" | "RIGHT" | "LEFT" | "AMBI";
+// Optional therapist-gender preference. Flags (never blocks) a mismatch on the
+// FO assignment screen; "" and NO_PREFERENCE both mean no warning ever fires.
+export type IntakePreferredTherapistGender = "" | "M" | "F" | "NO_PREFERENCE";
 
 export interface IntakeFormState {
   title: string;
@@ -37,6 +40,7 @@ export interface IntakeFormState {
   dob: string;
   sex: IntakeSex;
   dominance: IntakeDominance;
+  preferredTherapistGender: IntakePreferredTherapistGender;
   occupation: string;
   sport: string;
   addressLine1: string;
@@ -66,6 +70,7 @@ export const INITIAL_INTAKE_FORM: IntakeFormState = {
   dob: "",
   sex: "",
   dominance: "",
+  preferredTherapistGender: "",
   occupation: "",
   sport: "",
   addressLine1: "",
@@ -94,6 +99,7 @@ export type IntakePayload = {
   age?: number;
   sex: "M" | "F" | "OTHER";
   dominance?: "RIGHT" | "LEFT" | "AMBI";
+  preferredTherapistGender?: "M" | "F" | "NO_PREFERENCE";
   occupation?: string;
   sport?: string;
   addressLine1: string;
@@ -194,6 +200,7 @@ function buildPayload(form: IntakeFormState, computedAge: string): IntakePayload
     age: computedAge ? Number(computedAge) : undefined,
     sex: form.sex as "M" | "F" | "OTHER",
     dominance: form.dominance || undefined,
+    preferredTherapistGender: form.preferredTherapistGender || undefined,
     occupation: form.occupation.trim() || undefined,
     sport: form.sport.trim() || undefined,
     addressLine1: form.addressLine1.trim(),
@@ -513,6 +520,25 @@ function PageOne({
               <option value="AMBI">Ambidextrous</option>
             </select>
           </Field>
+          {/* Optional — defaults to no preference so this never becomes an
+              extra required step for patients who don't mind either way. */}
+          <Field label="Preferred therapist gender">
+            <select
+              value={form.preferredTherapistGender}
+              onChange={(e) =>
+                update(
+                  "preferredTherapistGender",
+                  e.target.value as IntakeFormState["preferredTherapistGender"],
+                )
+              }
+              aria-label="Preferred therapist gender"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            >
+              <option value="">No preference</option>
+              <option value="M">Male therapist</option>
+              <option value="F">Female therapist</option>
+            </select>
+          </Field>
           <Field label="Occupation">
             <Input
               value={form.occupation}
@@ -657,7 +683,8 @@ function PageTwo({
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            Please confirm the patient has read and accepts these terms. The full Terms of Service must be opened and scrolled before agreement.
+            Please confirm the patient has read and accepts these terms. The full Terms of Service
+            can be opened from the link below.
           </p>
           <Acknowledgement
             checked={form.consent}
@@ -683,7 +710,10 @@ function PageTwo({
             onChange={(v) => update("cancellationPolicy", v)}
             label="Patient acknowledges the cancellation policy: ≥4 hours' notice, or by 8 PM the previous day for morning slots."
           />
-          {/* 5th ack — full Terms of Service, opened in-place via the link. */}
+          {/* 5th ack — ticks directly like the other four. The full Terms of
+              Service stay one click away via the link for anyone who wants to
+              read them, but agreeing no longer requires proving you scrolled
+              through the whole document first. */}
           <div className="space-y-1">
             <label
               className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-accent ${
@@ -693,12 +723,8 @@ function PageTwo({
               <input
                 type="checkbox"
                 checked={form.agreedToTerms}
-                onChange={() => {
-                  if (form.agreedToTerms) update("agreedToTerms", false);
-                  else setTermsOpen(true);
-                }}
+                onChange={(e) => update("agreedToTerms", e.target.checked)}
                 className="mt-0.5 h-4 w-4"
-                readOnly
               />
               <span className="text-sm">
                 I agree to the{" "}

@@ -34,6 +34,7 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
     initialTokens.find((t) => t.status === "PENDING") ?? null,
   );
   const [label, setLabel] = useState("");
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   // Real-time-ish "Expires in" countdown. Synced post-mount to avoid hydration
   // mismatch — first render uses 0 (server-equivalent), then a 0ms timer
@@ -86,6 +87,35 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
       toast.error(err instanceof Error ? err.message : "Failed to create token");
     } finally {
       setPending(false);
+    }
+  }
+
+  // Remove an invite the patient never completed. The server refuses once a
+  // patient record exists, so a form completed since this list rendered is
+  // never affected.
+  async function remove(t: TokenView) {
+    if (!confirm(`Remove this intake invite${t.label ? ` (${t.label})` : ""}? The link stops working immediately.`)) {
+      return;
+    }
+    setRemovingId(t.id);
+    try {
+      const res = await fetch("/api/intake-token", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: t.id }),
+      });
+      if (!res.ok) {
+        throw new Error(
+          await readApiError(res, { fallback: "Couldn't remove that intake invite." }),
+        );
+      }
+      setTokens((prev) => prev.filter((x) => x.id !== t.id));
+      setActive((prev) => (prev?.id === t.id ? null : prev));
+      toast.success("Intake invite removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove invite");
+    } finally {
+      setRemovingId(null);
     }
   }
 
@@ -185,23 +215,35 @@ export function IntakePageClient({ initialTokens }: { initialTokens: TokenView[]
                       <StatusChip status={t.status} />
                     </td>
                     <td className="num">
-                      {t.status === "PENDING" ? (
-                        <button
-                          type="button"
-                          onClick={() => setActive(t)}
-                          className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-light)] px-2.5 py-1 text-xs font-medium hover:bg-secondary"
-                        >
-                          Show QR
-                        </button>
-                      ) : t.status === "COMPLETED" && t.clientId ? (
+                      {t.status === "COMPLETED" && t.clientId ? (
                         <a
                           href={`/dashboard/patients/${t.clientId}`}
                           className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-light)] px-2.5 py-1 text-xs font-medium hover:bg-secondary"
                         >
                           View <ExternalLink className="h-3 w-3" aria-hidden />
                         </a>
-                      ) : (
+                      ) : t.status === "COMPLETED" ? (
                         <span className="text-[color:var(--text-tertiary)]">—</span>
+                      ) : (
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          {t.status === "PENDING" ? (
+                            <button
+                              type="button"
+                              onClick={() => setActive(t)}
+                              className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-light)] px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                            >
+                              Show QR
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => void remove(t)}
+                            disabled={removingId === t.id}
+                            className="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-light)] px-2.5 py-1 text-xs font-medium text-destructive hover:bg-secondary disabled:opacity-50"
+                          >
+                            {removingId === t.id ? "Removing…" : "Remove"}
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

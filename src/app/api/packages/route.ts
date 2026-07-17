@@ -22,6 +22,9 @@ const createSchema = z.object({
         serviceId: z.string().min(1),
         count: z.number().int().min(1).max(50),
         consultantId: z.string().optional(),
+        // 0–1 fraction, same unit the standalone invoice endpoint uses, so a
+        // discount behaves identically whichever screen created the invoice.
+        lineDiscount: z.number().min(0).max(1).optional(),
       }),
     )
     .min(1),
@@ -150,7 +153,7 @@ export async function POST(req: Request) {
     return {
       qty,
       perAmount: svc.basePrice,
-      lineDiscountFraction: 0,
+      lineDiscountFraction: item.lineDiscount ?? 0,
       gstRate: svc.gstRate,
     };
   });
@@ -229,6 +232,7 @@ export async function POST(req: Request) {
           (consultantId ? staffById.get(consultantId)?.name : null) ??
           consultation?.consultant?.name ??
           null;
+        const lineDiscount = item.lineDiscount ?? 0;
         return {
           service: svc.name,
           serviceId: svc.id,
@@ -237,9 +241,9 @@ export async function POST(req: Request) {
           hsnSac: svc.hsnSacCode ?? null,
           qty,
           perAmount: svc.basePrice,
-          lineDiscount: 0,
+          lineDiscount,
           gstRate: svc.gstRate,
-          lineTotal: svc.basePrice * qty,
+          lineTotal: Math.round(svc.basePrice * qty * (1 - lineDiscount) * 100) / 100,
         };
       });
 
@@ -279,7 +283,11 @@ export async function POST(req: Request) {
       for (let i = 0; i < lineItems.length; i++) {
         const li = lineItems[i]!;
         const gross = li.qty * li.perAmount;
-        const lineAfterAll = misRound2(gross * misRatio);
+        // Per-line discount comes off before the invoice-level ratio is
+        // applied — same order as /api/invoices, so MIS reconciles to the
+        // invoice total no matter which screen created it.
+        const netLine = gross * (1 - li.lineDiscount);
+        const lineAfterAll = misRound2(netLine * misRatio);
         const lineGst = misRound2(lineAfterAll * li.gstRate);
         const lineTaxSplit = splitGstAmount({
           gstAmount: lineGst,

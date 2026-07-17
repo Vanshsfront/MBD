@@ -113,7 +113,9 @@ const CONSULTANT_PERMS: readonly Permission[] = [
   "patients:edit_clinical_record_own",
   "appointments:view_calendar_all",
   "appointments:request_change",
-  "billing:view_packages",
+  // No billing:view_packages — package pricing and the invoices linked to it
+  // are Owner/Admin/FO only. Consultants get the same session-count chip
+  // therapists do.
 ];
 
 const THERAPIST_PERMS: readonly Permission[] = [

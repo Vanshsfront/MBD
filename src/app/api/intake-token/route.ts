@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, requestMeta } from "@/lib/api-auth";
+import { assertCentreScope, requirePermission, requestMeta } from "@/lib/api-auth";
 import { createAuditLog } from "@/lib/audit";
 import { activeCentreId } from "@/lib/centre";
 import { generateSecureToken } from "@/lib/tokens";
@@ -12,6 +12,8 @@ import { generateSecureToken } from "@/lib/tokens";
 const TOKEN_TTL_MIN = 60;
 
 const bodySchema = z.object({ label: z.string().trim().max(60).optional() });
+
+const deleteSchema = z.object({ id: z.string().min(1) });
 
 export async function POST(req: Request) {
   const auth = await requirePermission("patients:generate_intake_qr");
@@ -57,6 +59,53 @@ export async function POST(req: Request) {
     expiresAt: token.expiresAt,
     label: token.label,
   });
+}
+
+// Remove an intake invite that was sent but never completed (patient never
+// showed). A never-completed invite carries no clinical or financial history,
+// so it's a hard delete rather than the soft-delete used for records with
+// history — but it's still audited. Gated to the same people who can generate
+// one in the first place (FO/Owner/Admin).
+export async function DELETE(req: Request) {
+  const auth = await requirePermission("patients:generate_intake_qr");
+  if (!auth.ok) return auth.response;
+
+  const parsed = deleteSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "validation_failed", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+  const { id } = parsed.data;
+
+  const existing = await prisma.intakeToken.findUnique({ where: { id } });
+  if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  const scope = await assertCentreScope(auth.user, existing);
+  if (scope) return scope;
+
+  // The patient may have completed the form between the list rendering and this
+  // click. A patient record exists at that point and must never be touched by
+  // this action — no-op with a clear message instead.
+  if (existing.status === "COMPLETED" || existing.clientId !== null) {
+    return NextResponse.json({ error: "intake_already_completed" }, { status: 409 });
+  }
+
+  await prisma.intakeToken.delete({ where: { id } });
+
+  const meta = requestMeta(req);
+  await createAuditLog({
+    action: "DELETE",
+    entity: "IntakeToken",
+    entityId: id,
+    performedById: auth.user.id,
+    metadata: { label: existing.label, status: existing.status },
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  });
+
+  return NextResponse.json({ ok: true });
 }
 
 export async function GET() {

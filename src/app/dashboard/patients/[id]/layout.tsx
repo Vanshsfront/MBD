@@ -72,8 +72,8 @@ export default async function PatientLayout({
   }
 
   // FO never sees clinical records (no access to consultation notes / PDFs).
-  // Therapist never sees Packages (per role-split — see therapist-session-
-  // summary on the overview page instead).
+  // Packages and Invoices key off the same permissions their pages enforce, so
+  // a role that can't open the page never sees a tab that dead-ends.
   const role = session.user.role;
   const tabs: { href: string; label: string }[] = [
     { href: `/dashboard/patients/${id}`, label: "Overview" },
@@ -81,10 +81,12 @@ export default async function PatientLayout({
   if (role !== "FRONT_OFFICE") {
     tabs.push({ href: `/dashboard/patients/${id}/clinical`, label: "Clinical record" });
   }
-  if (role !== "THERAPIST") {
+  if (hasPermission(role, "billing:view_packages")) {
     tabs.push({ href: `/dashboard/patients/${id}/packages`, label: "Packages" });
   }
-  tabs.push({ href: `/dashboard/patients/${id}/invoices`, label: "Invoices" });
+  if (hasPermission(role, "billing:view_invoices")) {
+    tabs.push({ href: `/dashboard/patients/${id}/invoices`, label: "Invoices" });
+  }
 
   const initials = `${client.firstName?.[0] ?? ""}${client.lastName?.[0] ?? ""}`.toUpperCase() || "?";
   const ageSex = [client.age, client.sex].filter(Boolean).join(" · ");

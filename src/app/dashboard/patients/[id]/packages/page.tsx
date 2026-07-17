@@ -57,13 +57,20 @@ export default async function PackagesPage({
     },
   });
 
-  // The most recent DRAFT consultation with recommendations is the input
-  // for "Create package".
+  // Recent consultations are the input for "Create package" — FO can draw on
+  // recommendations from any of them (a combined physio + nutrition package is
+  // recommended by two different clinicians), so all five are surfaced rather
+  // than one at a time. consultantId/department drive the per-line consultant
+  // default and the cross-department prompt.
   const recentConsultations = await prisma.consultation.findMany({
     where: { clientId: id },
     orderBy: { date: "desc" },
     take: 5,
-    include: { consultant: { select: { name: true } } },
+    include: {
+      consultant: {
+        select: { id: true, name: true, departmentId: true },
+      },
+    },
   });
 
   const [services, staff, promotions] = await Promise.all([
@@ -79,6 +86,7 @@ export default async function PackagesPage({
         basePrice: true,
         participantCount: true,
         durationMin: true,
+        departmentId: true,
         department: { select: { name: true } },
       },
     }),
@@ -89,7 +97,7 @@ export default async function PackagesPage({
         ...(client.centreId ? { centreId: client.centreId } : {}),
       },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, designation: true },
+      select: { id: true, name: true, designation: true, departmentId: true },
     }),
     prisma.promotion.findMany({
       where: { isActive: true },
@@ -140,7 +148,9 @@ export default async function PackagesPage({
       consultations={recentConsultations.map((c) => ({
         id: c.id,
         date: c.date.toISOString(),
+        consultantId: c.consultant?.id ?? null,
         consultantName: c.consultant?.name ?? null,
+        consultantDepartmentId: c.consultant?.departmentId ?? null,
         recommendedSessions: c.recommendedSessions,
         templateKey: c.templateKey,
         recommendedServicesJson: c.recommendedServicesJson,
@@ -151,12 +161,14 @@ export default async function PackagesPage({
         basePrice: s.basePrice,
         participantCount: s.participantCount,
         durationMin: s.durationMin,
+        departmentId: s.departmentId,
         department: s.department?.name ?? null,
       }))}
       staff={staff.map((s) => ({
         id: s.id,
         name: s.name,
         designation: s.designation ?? null,
+        departmentId: s.departmentId,
       }))}
       promotions={promotions.map((p) => ({
         code: p.code,

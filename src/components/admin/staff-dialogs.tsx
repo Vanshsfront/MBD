@@ -40,6 +40,7 @@ export interface StaffLite {
   isActive: boolean;
   departmentId: string | null;
   color?: string | null;
+  gender?: string | null;
   department?: { id: string; name: string } | null;
 }
 export interface DepartmentLite {
@@ -59,6 +60,19 @@ export const ROLE_DISPLAY: Record<string, string> = {
 };
 
 const NONE = "__none";
+
+// Optional. Powers the therapist-gender-preference flag on the FO assignment
+// screen — a therapist with no gender on file simply never triggers a warning,
+// so existing records keep working until an admin fills this in.
+const GENDER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "M", label: "Male" },
+  { value: "F", label: "Female" },
+  { value: "OTHER", label: "Other" },
+];
+function genderLabel(v: string): string {
+  return GENDER_OPTIONS.find((g) => g.value === v)?.label ?? "Not set";
+}
+
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -149,6 +163,7 @@ export function AddStaffDialog({
     departmentId: defaultDepartmentId ?? "",
     designation: "",
     color: "",
+    gender: "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -170,6 +185,7 @@ export function AddStaffDialog({
           role: form.role,
           departmentId: form.departmentId || null,
           designation: form.designation || null,
+          gender: form.gender || null,
         }),
       });
       if (!res.ok) throw new Error(await readApiError(res, { fallback: "Couldn't add staff." }));
@@ -227,6 +243,22 @@ export function AddStaffDialog({
                 </SelectContent>
               </Select>
             </Field>
+            <Field label="Gender">
+              <Select
+                value={form.gender || NONE}
+                onValueChange={(v) => setForm({ ...form, gender: v === NONE ? "" : v })}
+              >
+                <SelectTrigger>
+                  <SelectValue>{genderLabel(form.gender)}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Not set</SelectItem>
+                  {GENDER_OPTIONS.map((g) => (
+                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
           <Field label="Designation / title">
             <Input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Senior Physiotherapist" />
@@ -265,6 +297,7 @@ export function EditStaffDialog({
     departmentId: staff.departmentId ?? "",
     designation: staff.designation ?? "",
     color: staff.color ?? "",
+    gender: staff.gender ?? "",
     isActive: staff.isActive,
     newPassword: "",
   });
@@ -288,6 +321,7 @@ export function EditStaffDialog({
           departmentId: form.departmentId || null,
           designation: form.designation || null,
           color: form.color || null,
+          gender: form.gender || null,
           isActive: form.isActive,
           resetPassword: form.newPassword || undefined,
         }),
@@ -362,6 +396,22 @@ export function EditStaffDialog({
                   <SelectItem value={NONE}>None</SelectItem>
                   {departments.map((d) => (
                     <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Gender">
+              <Select
+                value={form.gender || NONE}
+                onValueChange={(v) => setForm({ ...form, gender: v === NONE ? "" : v })}
+              >
+                <SelectTrigger>
+                  <SelectValue>{genderLabel(form.gender)}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Not set</SelectItem>
+                  {GENDER_OPTIONS.map((g) => (
+                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

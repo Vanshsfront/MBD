@@ -162,6 +162,7 @@ export default async function AssignPage() {
             phone: c.phone,
             age: c.age,
             sex: c.sex,
+            preferredTherapistGender: c.preferredTherapistGender,
             email: c.email,
             createdAt: c.createdAt.toISOString(),
             selectedCategories: parseSelected(c.intakeForms[0]?.selectedCategories ?? null),
@@ -175,6 +176,7 @@ export default async function AssignPage() {
             role: s.role,
             designation: s.designation,
             department: s.department?.name ?? null,
+            gender: s.gender,
           }))}
           referralSources={referralSources.map((r) => ({ id: r.id, name: r.name }))}
         />

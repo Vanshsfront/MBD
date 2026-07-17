@@ -35,6 +35,7 @@ export default async function StaffAdminPage() {
         isActive: s.isActive,
         departmentId: s.departmentId,
         color: s.color,
+        gender: s.gender,
         department: s.department,
       }))}
     />
