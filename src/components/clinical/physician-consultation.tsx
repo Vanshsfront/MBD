@@ -19,7 +19,10 @@ interface State {
   personal: { sleep?: string; appetite?: string; bowelBladder?: string; others?: string };
   currentMedications: string;
   lab: { cbc?: string; rft?: string; lft?: string; tft?: string; lipid?: string; cmp?: string; hba1c?: string; urinalysis?: string };
+  labOther: string;
   imaging: { xray?: string; mri?: string; ct?: string; usg?: string; ecg?: string; dexa?: string };
+  imagingDetail: { xray?: string; mri?: string; ct?: string; usg?: string; ecg?: string; dexa?: string };
+  imagingOther: string;
   ref: { physiotherapy?: string; sc?: string; massage?: string; nutrition?: string; counselling?: string; yoga?: string };
   wellnessProgram: { yes?: string; no?: string };
 }
@@ -193,15 +196,63 @@ export function PhysicianConsultationForm({
           onToggle={(k, on) => setBox("lab", k, on)}
           disabled={disabled}
         />
+        <div className="mt-3">
+          <Field label="Other tests" span={2}>
+            <Input
+              value={data.labOther ?? ""}
+              onChange={(e) => update({ labOther: e.target.value })}
+              placeholder="Any test not listed above"
+              disabled={disabled}
+            />
+          </Field>
+        </div>
       </Section>
 
-      <Section title="Diagnostic imaging">
-        <CheckboxRow
-          items={IMAGING}
-          values={(data.imaging ?? {}) as Record<string, string>}
-          onToggle={(k, on) => setBox("imaging", k, on)}
-          disabled={disabled}
-        />
+      <Section title="Diagnostic imaging" description="Tick, then note the area imaged.">
+        <div className="space-y-2">
+          {IMAGING.map((it) => {
+            const ticked = data.imaging?.[it.key] === "☑";
+            return (
+              <div key={it.key} className="flex flex-wrap items-center gap-3">
+                <label className="flex w-40 items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={ticked}
+                    onChange={(e) => setBox("imaging", it.key, e.target.checked)}
+                    disabled={disabled}
+                  />
+                  {it.label}
+                </label>
+                {ticked ? (
+                  <Input
+                    className="flex-1"
+                    value={(data.imagingDetail ?? {})[it.key] ?? ""}
+                    onChange={(e) =>
+                      update({
+                        imagingDetail: {
+                          ...(data.imagingDetail ?? {}),
+                          [it.key]: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder={`Area / detail (e.g. ${it.label} of chest)`}
+                    disabled={disabled}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3">
+          <Field label="Other imaging" span={2}>
+            <Input
+              value={data.imagingOther ?? ""}
+              onChange={(e) => update({ imagingOther: e.target.value })}
+              placeholder="Any imaging not listed above"
+              disabled={disabled}
+            />
+          </Field>
+        </div>
       </Section>
 
       <Section title="Internal references">

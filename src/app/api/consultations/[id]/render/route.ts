@@ -13,6 +13,7 @@ import {
 } from "@/lib/templates/keys";
 import { phiHeaders } from "@/lib/responses";
 import { formatClinicDate } from "@/lib/date-format";
+import { labInvestigationsText, diagnosticImagingText } from "@/lib/physician-investigations";
 
 export async function GET(
   _req: Request,
@@ -99,6 +100,11 @@ export async function GET(
     comorbidities: extract(formData, "comorbidities", {}),
     sessions: extract(formData, "sessions", []),
     sessionsPage2: extract(formData, "sessionsPage2", []),
+    // Physician yellow boxes (spec 10 C): were static text listing every
+    // preset regardless of what was ordered. Now driven by the actual
+    // selections, including the free-text "Other" and per-scan area detail.
+    labInvestigations: labInvestigationsText(formData),
+    diagnosticImaging: diagnosticImagingText(formData),
     // Image-module placeholder. Pass through the data URL; if absent, the
     // module embeds a 1×1 transparent PNG (see src/lib/templates/docx.ts).
     consultantSignature: consultation.consultant.signatureDataUrl ?? "",
